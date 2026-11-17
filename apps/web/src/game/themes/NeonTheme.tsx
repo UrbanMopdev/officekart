@@ -34,7 +34,7 @@ function towerGeometry(w: number, h: number, d: number): THREE.BufferGeometry {
   return g;
 }
 
-function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[] } {
+function buildNeon(track: Track, day: boolean): { root: THREE.Group; textures: THREE.Texture[] } {
   const r = mulberry(8675309);
   const wall = track.def.wallHalfWidth;
   const root = new THREE.Group();
@@ -44,9 +44,9 @@ function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[]
   const skyGeo = new THREE.SphereGeometry(1500, 32, 20);
   const pos = skyGeo.getAttribute("position");
   const col = new Float32Array(pos.count * 3);
-  const top = new THREE.Color("#03040c");
-  const mid = new THREE.Color("#1a1040");
-  const horizon = new THREE.Color("#c026d3").multiplyScalar(0.75);
+  const top = new THREE.Color(day ? "#2f86ee" : "#03040c");
+  const mid = new THREE.Color(day ? "#8cc4ff" : "#1a1040");
+  const horizon = new THREE.Color(day ? "#e6f4ff" : "#c026d3").multiplyScalar(day ? 1 : 0.75);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const t = Math.max(0, pos.getY(i) / 1500);
@@ -83,8 +83,9 @@ function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[]
 
   // --- Support pylons and light arches
   for (let i = 0; i < track.n; i += 34) {
-    b.push(track.px[i], 0, track.pz[i], Math.atan2(track.tx[i], track.tz[i]));
-    b.cyl(2.6, 3.4, -GROUND - 3, 0, (GROUND - 3) / 2, 0, "#0b0f1d", { bucket: "metal", seg: 12 });
+    if (track.gap[i] || track.dyn[i]) continue;
+    b.push(track.px[i], track.hy[i], track.pz[i], Math.atan2(track.tx[i], track.tz[i]));
+    b.cyl(2.6, 3.4, track.hy[i] - GROUND - 3, 0, (GROUND - track.hy[i] - 3) / 2, 0, day ? "#8a97ab" : "#0b0f1d", { bucket: "metal", seg: 12 });
     b.rbox(wall * 2 + 4, 2.4, 5, 0.5, 0, -4.4, 0, "#0b0f1d", { bucket: "metal" });
     b.torus(3.6, 0.3, 0, -14, 0, NEONS[(i / 34) % NEONS.length], { bucket: "glow", glow: 3.5, rx: Math.PI / 2 });
     b.pop();
@@ -93,7 +94,8 @@ function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[]
   for (let k = 0; k < arches; k++) {
     const i = Math.floor(((k + 0.35) / arches) * track.n);
     const color = NEONS[k % 3];
-    b.push(track.px[i], 0, track.pz[i], Math.atan2(track.tx[i], track.tz[i]));
+    if (track.gap[i]) continue;
+    b.push(track.px[i], track.hy[i], track.pz[i], Math.atan2(track.tx[i], track.tz[i]));
     b.torus(wall + 5.5, 0.55, 0, 0, 0, color, { bucket: "glow", glow: 4.5, arc: Math.PI });
     b.torus(wall + 7, 0.25, 0, 0, 0, "#f8fafc", { bucket: "glow", glow: 1.6, arc: Math.PI });
     for (const side of [-1, 1]) b.rbox(2.6, 4, 2.6, 0.4, side * (wall + 6.2), 0.5, 0, "#0b0f1d", { bucket: "metal" });
@@ -124,7 +126,7 @@ function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[]
       const cls = classes[allowed[Math.floor(r() * allowed.length)]];
       const scaleY = 0.75 + r() * 0.5;
       const topY = GROUND + cls.h * scaleY;
-      if (near < wall + 62 && topY > -14) continue;
+      if (near < wall + 62 && topY > track.minY - 14) continue;
       q.setFromAxisAngle(up, r() < 0.5 ? 0 : Math.PI / 2);
       m.compose(new THREE.Vector3(x, GROUND, z), q, new THREE.Vector3(1, scaleY, 1));
       cls.list.push(m.clone());
@@ -145,7 +147,7 @@ function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[]
   }
   for (const cls of classes) {
     if (cls.list.length === 0) continue;
-    const mat = new THREE.MeshStandardMaterial({ color: "#10131f", map: cls.tex, emissive: "#ffffff", emissiveMap: cls.tex, emissiveIntensity: 2.4, roughness: 0.3, metalness: 0.75 });
+    const mat = new THREE.MeshStandardMaterial({ color: day ? "#9fb2c9" : "#10131f", map: day ? null : cls.tex, emissive: "#ffffff", emissiveMap: cls.tex, emissiveIntensity: day ? 0.5 : 2.4, roughness: 0.3, metalness: 0.75 });
     const mesh = new THREE.InstancedMesh(towerGeometry(cls.w, cls.h, cls.d), mat, cls.list.length);
     cls.list.forEach((mat4, i) => mesh.setMatrixAt(i, mat4));
     mesh.instanceMatrix.needsUpdate = true;
@@ -154,7 +156,7 @@ function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[]
   }
 
   // --- Streets far below, and a moon
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(3200, 3200), new THREE.MeshStandardMaterial({ color: "#070914", roughness: 0.25, metalness: 0.8 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(3200, 3200), new THREE.MeshStandardMaterial({ color: day ? "#5b6b80" : "#070914", roughness: 0.25, metalness: 0.8 }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = GROUND;
   root.add(ground);
@@ -164,9 +166,11 @@ function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[]
     b.box(2.2, 0.3, 2200, k * 92 + 46, 0, 0, k % 2 ? "#e879f9" : "#f59e0b", { bucket: "glow", glow: 1.5 });
     b.pop();
   }
-  b.push(-700, 520, 1050);
-  b.sphere(90, 0, 0, 0, "#dbe4ff", { bucket: "glow", glow: 1.7, seg: 32 });
-  b.pop();
+  if (!day) {
+    b.push(-700, 520, 1050);
+    b.sphere(90, 0, 0, 0, "#dbe4ff", { bucket: "glow", glow: 1.7, seg: 32 });
+    b.pop();
+  }
 
   root.add(b.build(false));
 
@@ -175,13 +179,14 @@ function buildNeon(track: Track): { root: THREE.Group; textures: THREE.Texture[]
   const moonGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, color: "#8ea2ff", transparent: true, opacity: 0.5, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
   moonGlow.position.set(-700, 520, 1050);
   moonGlow.scale.set(620, 620, 1);
-  root.add(moonGlow);
+  if (!day) root.add(moonGlow);
 
   return { root, textures };
 }
 
 export function NeonTheme({ track, quality }: { track: Track; quality: Quality }) {
-  const built = useMemo(() => buildNeon(track), [track]);
+  const day = track.def.theme === "sky";
+  const built = useMemo(() => buildNeon(track, day), [track, day]);
   useEffect(
     () => () => {
       disposeTree(built.root);
@@ -191,11 +196,11 @@ export function NeonTheme({ track, quality }: { track: Track; quality: Quality }
   );
   return (
     <>
-      <color attach="background" args={["#03040c"]} />
-      <fog attach="fog" args={["#0a0b1c", 220, 1500]} />
-      <hemisphereLight args={["#7c8cff", "#220a3d", 0.75]} />
+      <color attach="background" args={[day ? "#cfe6fb" : "#03040c"]} />
+      <fog attach="fog" args={day ? ["#d3e8fb", 300, 1500] : ["#0a0b1c", 220, 1500]} />
+      <hemisphereLight args={day ? ["#e8f4ff", "#7a8ba0", 1] : ["#7c8cff", "#220a3d", 0.75]} />
       <primitive object={built.root} />
-      <Stars radius={1100} depth={200} count={quality === "low" ? 1200 : 3500} factor={14} saturation={0.5} fade speed={0.5} />
+      {!day && <Stars radius={1100} depth={200} count={quality === "low" ? 1200 : 3500} factor={14} saturation={0.5} fade speed={0.5} />}
     </>
   );
 }

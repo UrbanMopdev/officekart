@@ -5,7 +5,7 @@ export type Phase = "lobby" | "countdown" | "racing" | "results";
 export const MSG = {
   /** client -> server: [seq, inputBits, steer] */
   INPUT: "i",
-  /** server -> all: [serverTimeMs, tick, [slot, x, z, heading, speed, flags, y] * karts] */
+  /** server -> all: [serverTimeMs, tick, [slot, x, z, heading, speed, flags, y, fx] * karts, entities, takenBoxes] */
   SNAPSHOT: "s",
   /** server -> owner: [ackSeq, ...packKartState] */
   SELF: "m",
@@ -19,12 +19,16 @@ export const MSG = {
   START: "start",
   REMATCH: "rematch",
   TO_LOBBY: "lobby",
+  /** client -> server: "same" | "random" | "harder" | "mayhem" */
+  VOTE: "vote",
+  /** server -> all: { kind, slot?, x?, y?, z?, item? } one-off happenings for sound and effects */
+  FX: "fx",
   /** server -> client: { level: "info" | "error", text } */
   NOTICE: "notice",
 } as const;
 
 /** Numbers per kart in a snapshot's flat array. */
-export const SNAPSHOT_STRIDE = 7;
+export const SNAPSHOT_STRIDE = 8;
 
 export interface JoinOptions {
   name: string;
@@ -50,6 +54,12 @@ export interface PlayerView {
   finished: boolean;
   finishMs: number;
   bestLapMs: number;
+  item: number;
+  charges: number;
+  wins: number;
+  points: number;
+  vote: string;
+  note: string;
 }
 
 export interface RoomView {
@@ -61,4 +71,20 @@ export interface RoomView {
   raceStartAt: number;
   raceNumber: number;
   players: PlayerView[];
+  chaos: number;
+  eventId: number;
+  eventFrom: number;
+  eventTo: number;
+  hzOff: number;
+  voteEndsAt: number;
+  awards: { title: string; name: string; detail: string }[];
+}
+
+export interface FxMessage {
+  kind: string;
+  slot?: number;
+  x?: number;
+  y?: number;
+  z?: number;
+  item?: number;
 }

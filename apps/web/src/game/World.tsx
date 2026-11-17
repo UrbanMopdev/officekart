@@ -2,19 +2,20 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { DEFAULT_TRACK_ID, FLAG, KART, angleDiff, driftLevel, getTrack, locate } from "@office-kart/shared";
+import { DEFAULT_TRACK_ID, FLAG, FX, KART, angleDiff, driftLevel, getTrack, locate } from "@office-kart/shared";
 import { net, type KartSample } from "../net/connection";
 import { useStore, type Quality } from "../store";
 import { EXHAUST, KartVisual, REAR_LEFT, REAR_RIGHT } from "./kartVisual";
 import { ParticleSystem } from "./particles";
 import { kartActive, kartPos } from "./shared";
-import { AlpineTheme } from "./themes/AlpineTheme";
+import { Hazards } from "./Hazards";
+import { TerrainTheme } from "./themes/TerrainTheme";
 import { NeonTheme } from "./themes/NeonTheme";
 import { OfficeTheme } from "./themes/OfficeTheme";
 import { TrackSurface } from "./TrackSurface";
 
-const sample: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0 };
-const focus: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0 };
+const sample: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0, fx: 0 };
+const focus: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0, fx: 0 };
 const loc = { idx: 0, along: 0, lateral: 0 };
 const v3 = new THREE.Vector3();
 
@@ -26,11 +27,17 @@ const SPARK: [number, number, number][] = [
   [6, 0.8, 5],
 ];
 
-const LIGHTING = {
+const LIGHTING: Record<string, { sun: string; sunIntensity: number; dir: readonly [number, number, number]; env: number }> = {
+  sky: { sun: "#fff6e0", sunIntensity: 3.6, dir: [0.5, 0.74, 0.3], env: 0.5 },
+  volcano: { sun: "#ffc08f", sunIntensity: 3.4, dir: [0.4, 0.6, 0.5], env: 0.5 },
+  frozen: { sun: "#eef6ff", sunIntensity: 3.3, dir: [0.5, 0.7, 0.35], env: 0.55 },
+  jungle: { sun: "#fff0c8", sunIntensity: 3.3, dir: [0.45, 0.78, 0.3], env: 0.4 },
+  sea: { sun: "#fff6e0", sunIntensity: 3.6, dir: [0.4, 0.82, 0.3], env: 0.5 },
+  chaos: { sun: "#d9b8ff", sunIntensity: 2.6, dir: [0.45, 0.7, 0.4], env: 0.4 },
   office: { sun: "#ffedcc", sunIntensity: 4.4, dir: [0.48, 0.78, 0.4], env: 0.38 },
   neon: { sun: "#9fb6ff", sunIntensity: 0.9, dir: [-0.4, 0.8, 0.3], env: 0.3 },
   alpine: { sun: "#fff3da", sunIntensity: 3.8, dir: [0.52, 0.72, 0.32], env: 0.45 },
-} as const;
+};
 
 /** How many whole particles to emit this frame for a given rate. */
 function count(rate: number, dt: number): number {
@@ -43,7 +50,8 @@ export function World({ quality }: { quality: Quality }) {
   const trackId = useStore((s) => s.room?.trackId ?? DEFAULT_TRACK_ID);
   const track = useMemo(() => getTrack(trackId), [trackId]);
   const theme = track.def.theme;
-  const light = LIGHTING[theme];
+  const light = LIGHTING[theme] ?? LIGHTING.alpine;
+  const family = theme === "office" ? "office" : theme === "neon" || theme === "sky" ? "neon" : "terrain";
   const shadows = quality !== "low";
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
@@ -53,9 +61,13 @@ export function World({ quality }: { quality: Quality }) {
   const fillA = useRef<THREE.PointLight>(null);
   const fillB = useRef<THREE.PointLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
-  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0 });
+  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0 });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
+  const fogHome = useRef<{ color: THREE.Color; near: number; far: number } | null>(null);
+  useEffect(() => {
+    fogHome.current = null;
+  }, [theme]);
   const handoff = useRef({ wasDriving: false, lastX: 0, lastZ: 0, lastH: 0, dx: 0, dz: 0, dh: 0 });
 
   const particles = useMemo(() => ({ glow: new ParticleSystem(900, true), smoke: new ParticleSystem(500, false) }), []);
@@ -84,6 +96,18 @@ export function World({ quality }: { quality: Quality }) {
   useEffect(() => {
     if (new URLSearchParams(location.search).has("preview")) (window as unknown as Record<string, unknown>).__ok = { gl, scene };
   }, [gl, scene]);
+
+  // While watching (finished, or waiting for the next race) the arrow keys switch racer.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "ArrowLeft" && e.code !== "ArrowRight") return;
+      const st = useStore.getState();
+      const me = st.room?.players.find((p) => p.id === st.myId);
+      if (st.room?.phase === "racing" && (!me?.racing || me.finished)) st.set({ spectate: st.spectate + (e.code === "ArrowRight" ? 1 : -1) });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const centre = useMemo(() => {
     let x = 0;
@@ -120,17 +144,15 @@ export function World({ quality }: { quality: Quality }) {
     // Whose kart the camera follows: ours, or the leader's if we are watching.
     let focusSlot = -1;
     if (inRace) {
-      if (me?.racing) focusSlot = me.slot;
+      if (me?.racing && !(me.finished && room.phase === "racing")) focusSlot = me.slot;
       else {
-        let best = 99;
-        for (const p of room.players) {
-          if (p.racing && p.place > 0 && p.place < best) {
-            best = p.place;
-            focusSlot = p.slot;
-          }
-        }
+        // Spectating: cycle through the racers still out there, leader first.
+        const others = room.players.filter((p) => p.racing && (!p.finished || room.phase !== "racing")).sort((a, b) => a.place - b.place);
+        const list = others.length ? others : room.players.filter((p) => p.racing);
+        if (list.length) focusSlot = list[((store.spectate % list.length) + list.length) % list.length].slot;
       }
     }
+    const settings = store.settings;
 
     kartActive.fill(0);
     let haveFocus = false;
@@ -149,6 +171,13 @@ export function World({ quality }: { quality: Quality }) {
           (driftLevel(k.driftCharge) << FLAG.LEVEL_SHIFT) |
           (k.offroad ? FLAG.OFFROAD : 0) |
           (k.air ? FLAG.AIRBORNE : 0);
+        sample.fx =
+          (k.spin > 0 ? FX.SPIN : 0) |
+          (k.shield > 0 ? FX.SHIELD : 0) |
+          (k.phantom > 0 ? FX.PHANTOM : 0) |
+          (k.sizeT > 0 ? (k.sizeK > 0 ? FX.GIANT : FX.MINI) : 0) |
+          (k.slow > 0 || k.emp > 0 ? FX.SLOW : 0) |
+          (k.water ? FX.WATER : 0);
       } else {
         ok = net.sampleKart(p.slot, sample);
       }
@@ -182,7 +211,7 @@ export function World({ quality }: { quality: Quality }) {
       let v = map.get(p.slot);
       if (!v) {
         v = new KartVisual();
-        v.setLook({ shadows, underglow: theme === "neon" });
+        v.setLook({ shadows, underglow: theme === "neon" || theme === "chaos" });
         map.set(p.slot, v);
         group.add(v.group);
       }
@@ -200,7 +229,7 @@ export function World({ quality }: { quality: Quality }) {
       const across = -hz * track.nx[loc.idx] + hx * track.nz[loc.idx];
       const pitch = Math.atan(track.slope[loc.idx] * along + track.bankT[loc.idx] * (hx * track.nx[loc.idx] + hz * track.nz[loc.idx]));
       const roll = Math.atan(track.bankT[loc.idx] * across - track.slope[loc.idx] * (hz * track.tx[loc.idx] - hx * track.tz[loc.idx]));
-      v.update(sample.x, sample.y, sample.z, sample.heading, sample.speed, sample.flags, pitch, roll, dt, time);
+      v.update(sample.x, sample.y, sample.z, sample.heading, sample.speed, sample.flags, pitch, roll, dt, time, sample.fx);
       const airborne = (sample.flags & FLAG.AIRBORNE) !== 0;
       if (v.wasAir && !airborne && camDist2 < 220 * 220) {
         // Landing: a ring of dust kicked out from under the kart.
@@ -222,11 +251,24 @@ export function World({ quality }: { quality: Quality }) {
       // --- Particles (skipped for karts far from the camera)
       if (camDist2 < 220 * 220) {
         const speed = Math.abs(sample.speed);
+        const wet = (sample.fx & FX.WATER) !== 0;
+        if (wet && speed > 3) {
+          // Under water the kart trails bubbles instead of smoke.
+          v.toWorld(Math.random() < 0.5 ? REAR_LEFT : REAR_RIGHT, v3);
+          for (let i = count(settings.reducedFx ? 10 : 34, dt); i > 0; i--) {
+            particles.glow.emit({
+              x: v3.x + (Math.random() - 0.5), y: v3.y + 0.3, z: v3.z + (Math.random() - 0.5),
+              vx: (Math.random() - 0.5) * 1.5, vy: 2.5 + Math.random() * 3, vz: (Math.random() - 0.5) * 1.5,
+              life: 0.8 + Math.random() * 0.6, size: 0.22 + Math.random() * 0.25, grow: 1.5,
+              r: 0.7, g: 0.95, b: 1.2, alpha: 0.6, gravity: -3, drag: 0.6, floor: sample.y - 3,
+            });
+          }
+        }
         const fx = Math.sin(sample.heading);
         const fz = Math.cos(sample.heading);
         const drift = !airborne && (sample.flags & (FLAG.DRIFT_LEFT | FLAG.DRIFT_RIGHT)) !== 0;
         const level = (sample.flags >> FLAG.LEVEL_SHIFT) & 3;
-        if (drift && speed > 5) {
+        if (drift && speed > 5 && !wet) {
           const c = SPARK[level];
           for (const wheel of [REAR_LEFT, REAR_RIGHT]) {
             v.toWorld(wheel, v3);
@@ -240,7 +282,7 @@ export function World({ quality }: { quality: Quality }) {
                 r: c[0], g: c[1], b: c[2], alpha: 1, gravity: 16, drag: 0.6, floor: sample.y,
               });
             }
-            for (let i = count(26, dt); i > 0; i--) {
+            for (let i = count(settings.reducedFx ? 0 : 26, dt); i > 0; i--) {
               particles.smoke.emit({
                 x: v3.x, y: v3.y + 0.1, z: v3.z,
                 vx: (Math.random() - 0.5) * 1.6, vy: 0.8 + Math.random() * 1.2, vz: (Math.random() - 0.5) * 1.6,
@@ -264,14 +306,14 @@ export function World({ quality }: { quality: Quality }) {
             });
           }
         }
-        if (offroad && !airborne && speed > 7 && theme !== "neon") {
+        if (offroad && !airborne && !wet && speed > 7 && family !== "neon") {
           v.toWorld(Math.random() < 0.5 ? REAR_LEFT : REAR_RIGHT, v3);
           for (let i = count(30, dt); i > 0; i--) {
             particles.smoke.emit({
               x: v3.x, y: v3.y + 0.1, z: v3.z,
               vx: -fx * 2 + (Math.random() - 0.5) * 2, vy: 1.2 + Math.random() * 1.5, vz: -fz * 2 + (Math.random() - 0.5) * 2,
               life: 0.45 + Math.random() * 0.3, size: 0.6, grow: 2.6,
-              r: theme === "alpine" ? 0.62 : 0.42, g: theme === "alpine" ? 0.55 : 0.62, b: 0.4, alpha: 0.3, gravity: 1.5, drag: 1.5, floor: sample.y,
+              r: family === "terrain" ? 0.62 : 0.42, g: family === "terrain" ? 0.55 : 0.62, b: 0.4, alpha: 0.3, gravity: 1.5, drag: 1.5, floor: sample.y,
             });
           }
         }
@@ -285,6 +327,7 @@ export function World({ quality }: { quality: Quality }) {
         focus.heading = sample.heading;
         focus.speed = sample.speed;
         focus.flags = sample.flags;
+        focus.fx = sample.fx;
       }
     }
     for (const [slot, v] of map) {
@@ -310,12 +353,15 @@ export function World({ quality }: { quality: Quality }) {
       c.y += (focus.y - c.y) * (1 - Math.exp(-dt * 7));
       c.heading += angleDiff(focus.heading, c.heading) * (1 - Math.exp(-dt * 5.5));
       const boost = (focus.flags & FLAG.BOOST) !== 0;
-      c.shake += ((boost ? 1 : 0) - c.shake) * (1 - Math.exp(-dt * 6));
+      c.shake += ((boost && settings.shake ? 1 : 0) - c.shake) * (1 - Math.exp(-dt * 6));
+      // Pull back and up a little in the air so jumps read as big.
+      c.air += (((focus.flags & FLAG.AIRBORNE) !== 0 ? 1 : 0) - c.air) * (1 - Math.exp(-dt * 4));
       const fx = Math.sin(c.heading);
       const fz = Math.cos(c.heading);
       const jx = Math.sin(time * 61) * 0.035 * c.shake;
       const jy = Math.sin(time * 47 + 1.3) * 0.03 * c.shake;
-      camera.position.set(focus.x - fx * (8.8 - c.shake * 0.5) + fz * jx, c.y + 4.1 + jy, focus.z - fz * (8.8 - c.shake * 0.5) - fx * jx);
+      const back = 8.8 - c.shake * 0.5 + c.air * 2.6;
+      camera.position.set(focus.x - fx * back + fz * jx, c.y + 4.1 + jy + c.air * 1.4, focus.z - fz * back - fx * jx);
       camera.lookAt(focus.x + fx * 6, focus.y + 1.6, focus.z + fz * 6);
       fov = 62 + Math.min(1, Math.abs(focus.speed) / KART.maxSpeed) * 9 + c.shake * 8;
       lookX = focus.x + fx * 20;
@@ -360,6 +406,24 @@ export function World({ quality }: { quality: Quality }) {
       fillB.current.position.set(cx - fz * 10, camera.position.y + 8, cz + fx * 10);
     }
 
+    // Below the water line: thick blue fog and a tint on the HUD.
+    const under = camera.position.y < track.waterLevel - 0.3;
+    if (under !== store.underwater) store.set({ underwater: under });
+    const fog = state.scene.fog as THREE.Fog | null;
+    if (fog) {
+      if (!fogHome.current) fogHome.current = { color: fog.color.clone(), near: fog.near, far: fog.far };
+      const home = fogHome.current;
+      if (under) {
+        fog.color.set("#0b5a8a");
+        fog.near = 4;
+        fog.far = 150;
+      } else {
+        fog.color.copy(home.color);
+        fog.near = home.near;
+        fog.far = home.far;
+      }
+    }
+
     const pixelsPerUnit = state.size.height / (2 * Math.tan((camera.fov * Math.PI) / 360));
     particles.glow.update(dt, pixelsPerUnit);
     particles.smoke.update(dt, pixelsPerUnit);
@@ -382,7 +446,8 @@ export function World({ quality }: { quality: Quality }) {
 
   return (
     <>
-      {theme === "neon" ? <NeonTheme track={track} quality={quality} /> : theme === "alpine" ? <AlpineTheme track={track} quality={quality} /> : <OfficeTheme track={track} quality={quality} />}
+      {family === "neon" ? <NeonTheme track={track} quality={quality} /> : family === "terrain" ? <TerrainTheme track={track} quality={quality} /> : <OfficeTheme track={track} quality={quality} />}
+      <Hazards track={track} />
       <directionalLight
         ref={sunRef}
         color={light.sun}

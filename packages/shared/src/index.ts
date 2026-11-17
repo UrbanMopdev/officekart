@@ -4,22 +4,16 @@ export * from "./physics";
 export * from "./protocol";
 export * from "./names";
 export * from "./prediction";
-export { OFFICE_DASH } from "./tracks/officeDash";
-export { NEON_NIGHTS } from "./tracks/neonNights";
-export { PROVING_GROUNDS } from "./tracks/provingGrounds";
 
 import { buildTrack, type Track, type TrackDef } from "./track";
-import { NEON_NIGHTS } from "./tracks/neonNights";
-import { OFFICE_DASH } from "./tracks/officeDash";
+import { CHAOS_TRACKS } from "./tracks/chaosTracks";
 import { PROVING_GROUNDS } from "./tracks/provingGrounds";
 
-export const TRACK_DEFS: Record<string, TrackDef> = {
-  [OFFICE_DASH.id]: OFFICE_DASH,
-  [NEON_NIGHTS.id]: NEON_NIGHTS,
-  [PROVING_GROUNDS.id]: PROVING_GROUNDS,
-};
+/** Every selectable track, in lobby order: the eight circuits, then the test track. */
+export const TRACK_DEFS: Record<string, TrackDef> = {};
+for (const def of [...CHAOS_TRACKS, PROVING_GROUNDS]) TRACK_DEFS[def.id] = def;
 
-export const DEFAULT_TRACK_ID = OFFICE_DASH.id;
+export const DEFAULT_TRACK_ID = CHAOS_TRACKS[0].id;
 
 const built = new Map<string, Track>();
 
@@ -27,7 +21,7 @@ const built = new Map<string, Track>();
 export function getTrack(id: string): Track {
   let t = built.get(id);
   if (!t) {
-    const def = TRACK_DEFS[id] ?? OFFICE_DASH;
+    const def = TRACK_DEFS[id] ?? CHAOS_TRACKS[0];
     t = buildTrack(def);
     built.set(id, t);
   }

@@ -39,7 +39,7 @@ function procRssMb(pid: number): number | null {
 async function main(): Promise<void> {
   const server = await getServer(2598);
   const pid = server.child?.pid;
-  const bots = Array.from({ length: MAX_PLAYERS }, (_, i) => new Bot(server.url, { name: `Racer ${i + 1}`, lane: -4.5 + (i % 6) * 1.8, drift: i % 4 === 0 }));
+  const bots = Array.from({ length: MAX_PLAYERS }, (_, i) => new Bot(server.url, { name: `Racer ${i + 1}`, lane: -4.5 + (i % 6) * 1.8, drift: i % 4 === 0, items: true }));
   let ok = true;
   try {
     const code = await bots[0].create();
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     console.log(`${overflow ? "PASS" : "FAIL"}  a 13th player is turned away`);
     ok &&= overflow;
 
-    bots[0].room.send(MSG.SETTINGS, { laps: LAPS, trackId: TRACK });
+    bots[0].room.send(MSG.SETTINGS, { laps: LAPS, trackId: TRACK, chaos: Number(process.env.CHAOS) || 0 });
     for (const b of bots.slice(1)) b.room.send(MSG.READY, true);
     await bots[0].waitFor("all ready", () => bots[0].players.filter((p) => p.ready).length === MAX_PLAYERS - 1);
     bots[0].room.send(MSG.START);

@@ -3,6 +3,7 @@ import { normalizeCode } from "@office-kart/shared";
 import { Game } from "./game/Game";
 import { net } from "./net/connection";
 import { useStore } from "./store";
+import { AudioDirector } from "./ui/AudioDirector";
 import { Hud } from "./ui/Hud";
 import { Lobby } from "./ui/Lobby";
 import { Menu } from "./ui/Menu";
@@ -70,6 +71,7 @@ export function App() {
 
   return (
     <div className="h-full">
+      <AudioDirector />
       {screen}
       {status === "reconnecting" && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/70">

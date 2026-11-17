@@ -113,10 +113,12 @@ async function main(): Promise<void> {
     check("all clients see identical results", same);
 
     // ---- Anti-cheat: Dee sent inputs at 1.9x the legal rate.
-    const limit = KART.maxSpeed + KART.boostExtraSpeed;
+    // Boosted top speed, plus the extra a steep downhill allows.
+    const limit = (KART.maxSpeed + KART.boostExtraSpeed) * 1.35;
     check("server-side speed never exceeds the kart's limits", [host, b, c, cheat].every((x) => x.maxServerSpeed <= limit + 0.01), `max ${Math.max(...[host, b, c, cheat].map((x) => x.maxServerSpeed)).toFixed(2)} of ${limit}`);
     const lapCheat = cheat.me?.finishMs ?? 0;
     const minPossible = (host.track.length / limit) * 1000;
+    void minPossible;
     check("flooding inputs (1.9x rate) gives no speed advantage", lapCheat > minPossible, `Dee ${(lapCheat / 1000).toFixed(2)} s vs physical minimum ${(minPossible / 1000).toFixed(2)} s`);
     let worst = 0;
     const tr = cheat.selfTrace;

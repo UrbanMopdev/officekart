@@ -29,10 +29,32 @@ interface Palette {
   banner: [string, string, string];
 }
 
-/** Overlay colour for each surface type (index matches SURFACE_TYPES). */
-const SURFACE_COLORS = ["#2d313c", "#a8834f", "#5a3a1f", "#bfe8ff", "#f3f7fd", "#e3cb8a", "#22d3ee"];
+/** Per-theme tweaks on top of the default outdoor palette. */
+const TINTS: Record<string, Partial<Palette>> = {
+  sky: {
+    road: { base: "#2a2f3d", edge: "#f8fafc", centre: "#67e8f9", speckle: 0.6 },
+    roadRoughness: 0.45,
+    roadMetalness: 0.2,
+    turf: ["#3b4660", "#343e56"],
+    turfRoughness: 0.5,
+    kerb: ["#0ea5e9", "#f8fafc"],
+    barrier: ["#f8fafc", "#0ea5e9"],
+    led: "#67e8f9",
+    ledGlow: 2.4,
+    gantry: "#0369a1",
+    banner: ["#0369a1", "#f8fafc", "#67e8f9"],
+  },
+  volcano: { turf: ["#3a2a26", "#30221f"], kerb: ["#f97316", "#1c1917"], barrier: ["#1c1917", "#f97316"], gantry: "#7c2d12", banner: ["#7c2d12", "#fed7aa", "#f97316"] },
+  frozen: { turf: ["#e8f0f8", "#dbe6f2"], kerb: ["#0ea5e9", "#f8fafc"], barrier: ["#f8fafc", "#38bdf8"], gantry: "#0c4a6e", banner: ["#0c4a6e", "#f8fafc", "#7dd3fc"] },
+  jungle: { turf: ["#6b5a36", "#5f4f2f"], kerb: ["#ca8a04", "#fef3c7"], barrier: ["#a8a29e", "#57534e"], gantry: "#3f6212", banner: ["#3f6212", "#fef9c3", "#facc15"] },
+  sea: { turf: ["#dcc891", "#d0bb82"], kerb: ["#f97316", "#f8fafc"], barrier: ["#f8fafc", "#f97316"], gantry: "#0e7490", banner: ["#0e7490", "#f8fafc", "#fde047"] },
+  chaos: { road: { base: "#1a1230", edge: "#f0abfc", centre: "#67e8f9", speckle: 0.5 }, turf: ["#2a1a4a", "#24163f"], kerb: ["#f0abfc", "#22d3ee"], barrier: ["#1e1b4b", "#c026d3"], led: "#f0abfc", ledGlow: 3, gantry: "#581c87", banner: ["#581c87", "#f0abfc", "#67e8f9"] },
+};
 
-const PALETTES: Record<TrackTheme, Palette> = {
+/** Overlay colour for each surface type (index matches SURFACE_TYPES). */
+const SURFACE_COLORS = ["#2d313c", "#a8834f", "#5a3a1f", "#bfe8ff", "#f3f7fd", "#e3cb8a", "#22d3ee", "#1a1026", "#4b5563", "#7c2d12"];
+
+const PALETTES: Record<string, Palette> = {
   alpine: {
     road: { base: "#33363f", edge: "#f1f5f9", centre: "#f8fafc", speckle: 1 },
     roadRoughness: 0.88,
@@ -85,6 +107,10 @@ interface StripOptions {
   color?: (i: number) => THREE.Color;
   /** Leave out the stretch starting at sample i (on top of gaps, which are always left out). */
   skip?: (i: number) => boolean;
+  /** Draw stretches that a hazard owns (collapsing sections, moving platforms). */
+  includeDyn?: boolean;
+  /** Put the second edge at this absolute height instead of following the road. */
+  absB?: number;
 }
 
 /** A band of quads following the track between two (lateral, height) offsets. */
@@ -98,7 +124,7 @@ export function strip(track: Track, latA: number, yA: number, latB: number, yB: 
   let c = 0;
   const put = (i: number, lat: number, y: number, uu: number, vv: number, color?: THREE.Color) => {
     pos[p++] = px[i] + nx[i] * lat;
-    pos[p++] = y + track.hy[i] + lat * track.bankT[i];
+    pos[p++] = uu === 1 && opts.absB !== undefined ? opts.absB : y + track.hy[i] + lat * track.bankT[i];
     pos[p++] = pz[i] + nz[i] * lat;
     if (uv) {
       uv[u++] = uu;
@@ -112,7 +138,7 @@ export function strip(track: Track, latA: number, yA: number, latB: number, yB: 
   };
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
-    if (track.gap[i] || opts.skip?.(i)) continue;
+    if (track.gap[i] || (track.dyn[i] && !opts.includeDyn) || opts.skip?.(i)) continue;
     const v0 = opts.uvScale ? (i * spacing) / opts.uvScale : 0;
     const v1 = opts.uvScale ? ((i + 1) * spacing) / opts.uvScale : 0;
     const color = opts.color?.(i);
@@ -176,7 +202,8 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
   const scrollers = useRef<THREE.Texture[]>([]);
 
   const root = useMemo(() => {
-    const pal = PALETTES[theme];
+    const pal = PALETTES[theme] ?? { ...PALETTES.alpine, ...(TINTS[theme] ?? {}) };
+    const neonLike = theme === "neon" || theme === "sky";
     const road = track.def.roadHalfWidth;
     const wall = track.def.wallHalfWidth;
     const group = new THREE.Group();
@@ -199,7 +226,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     const turfTex = keep(turfTexture(pal.turf[0], pal.turf[1]));
     const turfGeo = mergeGeometries([strip(track, -wall, 0.03, -road - 1.3, 0.03, { uvScale: 6 }), strip(track, road + 1.3, 0.03, wall, 0.03, { uvScale: 6 })], false)!;
     turfGeo.computeVertexNormals();
-    const turf = new THREE.Mesh(turfGeo, new THREE.MeshStandardMaterial({ map: turfTex, roughness: pal.turfRoughness, metalness: theme === "neon" ? 0.4 : 0 }));
+    const turf = new THREE.Mesh(turfGeo, new THREE.MeshStandardMaterial({ map: turfTex, roughness: pal.turfRoughness, metalness: neonLike ? 0.4 : 0 }));
     turf.receiveShadow = true;
     group.add(turf);
 
@@ -239,7 +266,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
         (i) => (Math.floor(i / 5) % 2 ? barA : barB),
         true,
       ),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: theme === "neon" ? 0.3 : 0.4, metalness: theme === "neon" ? 0.6 : 0.05, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: neonLike ? 0.3 : 0.4, metalness: neonLike ? 0.6 : 0.05, side: THREE.DoubleSide }),
     );
     barrier.castShadow = true;
     barrier.receiveShadow = true;
@@ -247,12 +274,12 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
 
     // --- Light strip along the top of both barriers
     const led = new THREE.Color(pal.led).multiplyScalar(pal.ledGlow);
-    const ledAlt = theme === "neon" ? new THREE.Color("#e879f9").multiplyScalar(pal.ledGlow) : led;
+    const ledAlt = neonLike ? new THREE.Color("#e879f9").multiplyScalar(pal.ledGlow) : led;
     const ledGeo = mergeGeometries(
       [
         strip(track, wall + 0.3, 1.335, wall + 0.7, 1.335, { color: () => led }),
         strip(track, -wall - 0.7, 1.335, -wall - 0.3, 1.335, { color: () => ledAlt }),
-        ...(theme === "neon"
+        ...(neonLike
           ? [strip(track, wall - 0.02, 0.35, wall - 0.02, 0.6, { color: () => led }), strip(track, -wall + 0.02, 0.6, -wall + 0.02, 0.35, { color: () => ledAlt })]
           : []),
       ],
@@ -272,7 +299,8 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
         const base = new THREE.Color(SURFACE_COLORS[z.type]);
         const alt = base.clone().multiplyScalar(boost ? 0.35 : 0.9);
         const hot = base.clone().multiplyScalar(1.9);
-        (boost ? glow : solid).push(strip(track, a, 0.075, b2, 0.075, { skip: (i) => !inside(i), color: (i) => (boost ? (i % 2 ? hot : alt) : Math.floor(i / 3) % 2 ? base : alt) }));
+        const belt = z.type === 8 || z.type === 9;
+        (boost ? glow : solid).push(strip(track, a, 0.075, b2, 0.075, { skip: (i) => !inside(i), color: (i) => (boost ? (i % 2 ? hot : alt) : belt ? (i % 2 ? base : alt.clone().multiplyScalar(0.6)) : Math.floor(i / 3) % 2 ? base : alt) }));
       }
       if (solid.length) {
         const g = mergeGeometries(solid, false)!;

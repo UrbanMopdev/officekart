@@ -9,7 +9,7 @@
  * from what was on screen is folded into a small visual offset that decays over
  * a few frames, so corrections are smooth instead of snapping.
  */
-import { angleDiff, copyKartState, createKartState, decodeInput, stepKart, unpackKartState, type KartInput, type KartState } from "./physics";
+import { NO_CTX, angleDiff, copyKartState, createKartState, decodeInput, stepKart, unpackKartState, type KartInput, type KartState, type RaceCtx } from "./physics";
 import type { Track } from "./track";
 
 interface PendingInput {
@@ -34,7 +34,9 @@ export class Predictor {
   corrections = 0;
 
   private pending: PendingInput[] = [];
-  private readonly input: KartInput = { throttle: 0, steer: 0, drift: false, reset: false };
+  private readonly input: KartInput = { throttle: 0, steer: 0, drift: false, reset: false, use: false };
+  /** Current chaos event and hazard timing, kept in step with the room state. */
+  ctx: RaceCtx = { ...NO_CTX };
   private readonly before: KartState = createKartState();
   private hasState = false;
 
@@ -48,6 +50,7 @@ export class Predictor {
     this.maxCorrection = 0;
     this.corrections = 0;
     this.hasState = false;
+    this.ctx = { ...NO_CTX };
   }
 
   get ready(): boolean {
@@ -64,7 +67,7 @@ export class Predictor {
     this.pending.push({ seq, bits, steer });
     if (this.pending.length > 120) this.pending.shift();
     copyKartState(this.state, this.prev);
-    stepKart(this.state, decodeInput(bits, steer, this.input), this.track);
+    stepKart(this.state, decodeInput(bits, steer, this.input), this.track, this.ctx);
     return [seq, bits, steer];
   }
 
@@ -84,7 +87,7 @@ export class Predictor {
     copyKartState(this.state, this.prev);
     for (const p of this.pending) {
       copyKartState(this.state, this.prev);
-      stepKart(this.state, decodeInput(p.bits, p.steer, this.input), this.track);
+      stepKart(this.state, decodeInput(p.bits, p.steer, this.input), this.track, this.ctx);
     }
     this.hasState = true;
     if (first) return 0;

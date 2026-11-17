@@ -25,6 +25,8 @@ export interface BotOptions {
   drift?: boolean;
   /** Input send rate multiplier. >1 simulates a speed-hack attempt. */
   inputRate?: number;
+  /** Press the item button now and then. */
+  items?: boolean;
   /** If false the bot joins but never drives. */
   drive?: boolean;
 }
@@ -207,6 +209,7 @@ export class Bot {
     const steer = Math.max(-1, Math.min(1, -diff * 3));
     let bits = INPUT_BITS.ACCEL;
     if (this.opts.drift && Math.abs(diff) > 0.3) bits |= INPUT_BITS.DRIFT;
+    if (this.opts.items && Math.random() < 0.03) bits |= INPUT_BITS.USE;
     return [bits, steer];
   }
 }

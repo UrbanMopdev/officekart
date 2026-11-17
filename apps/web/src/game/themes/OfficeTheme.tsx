@@ -11,6 +11,8 @@ import type { Track } from "@office-kart/shared";
 import type { Quality } from "../../store";
 import { Builder, disposeTree } from "../builder";
 import { rugTexture, whiteboardTexture, woodTexture } from "../textures";
+import { strip } from "../TrackSurface";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Placer, distanceToTrack, mulberry, trackBounds } from "./placement";
 
 type Rand = () => number;
@@ -410,6 +412,8 @@ function buildOffice(track: Track): { root: THREE.Group; textures: THREE.Texture
       ].map(([lx, lz]) => [track.px[i] + lx * c + lz * s, track.pz[i] - lx * s + lz * c]);
       // Every leg must stand clear of the whole circuit, not just this stretch.
       if (!legs.every(([x, z]) => distanceToTrack(track, x, z) > wall + 5)) continue;
+      // Only where the road is at floor level; raised sections need the headroom.
+      if (Math.abs(track.hy[i]) > 1.5) continue;
       // Straight-ish stretches only, so the desk sits squarely across the road.
       const j = (i + 12) % track.n;
       if (track.tx[i] * track.tx[j] + track.tz[i] * track.tz[j] < 0.92) continue;
@@ -447,6 +451,19 @@ function buildOffice(track: Track): { root: THREE.Group; textures: THREE.Texture
   }
 
   root.add(b.build());
+
+  // Raised stretches of road stand on stacked-cardboard ramps that reach the floor.
+  if (track.maxY > 1) {
+    const card = new THREE.Color("#b98d5c");
+    const card2 = new THREE.Color("#a67c4e");
+    const colour = (i: number) => (Math.floor(i / 4) % 2 ? card : card2);
+    const sides = mergeGeometries([strip(track, wall + 1, 0, wall + 1, 0, { absB: 0, color: colour }), strip(track, -wall - 1, 0, -wall - 1, 0, { absB: 0, color: colour })], false)!;
+    sides.computeVertexNormals();
+    const ramp = new THREE.Mesh(sides, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));
+    ramp.castShadow = true;
+    ramp.receiveShadow = true;
+    root.add(ramp);
+  }
   return { root, textures, size: [W, D], centre: [cx, cz] };
 }
 

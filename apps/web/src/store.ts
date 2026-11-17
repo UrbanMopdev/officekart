@@ -13,7 +13,34 @@ export interface HudState {
   offroad: boolean;
 }
 
+export interface Settings {
+  master: number;
+  music: number;
+  sfx: number;
+  /** Camera shake on boosts and landings. */
+  shake: boolean;
+  /** Fewer particles and no screen effects. */
+  reducedFx: boolean;
+}
+
+const SETTINGS_KEY = "office-kart:settings";
+const DEFAULT_SETTINGS: Settings = { master: 0.8, music: 0.6, sfx: 0.9, shake: true, reducedFx: false };
+
+function loadSettings(): Settings {
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
 interface Store {
+  settings: Settings;
+  setSettings(patch: Partial<Settings>): void;
+  /** Camera is below the water line. */
+  underwater: boolean;
+  /** While watching: which racer (by place order) the camera follows. */
+  spectate: number;
   name: string;
   status: ConnectionStatus;
   room: RoomView | null;
@@ -55,6 +82,20 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useStore = create<Store>((set) => ({
   name: loadName(),
+  settings: loadSettings(),
+  setSettings(patch) {
+    set((s) => {
+      const settings = { ...s.settings, ...patch };
+      try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      } catch {
+        /* ignore */
+      }
+      return { settings };
+    });
+  },
+  underwater: false,
+  spectate: 0,
   status: "idle",
   room: null,
   myId: "",

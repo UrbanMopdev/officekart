@@ -23,12 +23,14 @@ interface Run {
   floatError: number;
   surfaceSpeed: Record<string, number[]>;
   finished: boolean;
+  underwater: number;
+  waterSpeed: number;
 }
 
 function drive(track: Track, opts: { lane?: number; throttle?: (pos: number) => boolean; maxSeconds?: number } = {}): Run {
   const s = placeOnGrid(createKartState(), track, 0);
-  const input: KartInput = { throttle: 0, steer: 0, drift: false, reset: false };
-  const run: Run = { lapSeconds: 0, airSeconds: 0, jumps: 0, longestAir: 0, respawns: 0, maxY: -Infinity, minSpeedUphill: Infinity, maxSpeed: 0, floatError: 0, surfaceSpeed: {}, finished: false };
+  const input: KartInput = { throttle: 0, steer: 0, drift: false, reset: false, use: false };
+  const run: Run = { lapSeconds: 0, airSeconds: 0, jumps: 0, longestAir: 0, respawns: 0, maxY: -Infinity, minSpeedUphill: Infinity, maxSpeed: 0, floatError: 0, surfaceSpeed: {}, finished: false, underwater: 0, waterSpeed: 0 };
   let travel = wrapDelta(s.pos, 0, track.n);
   let air = 0;
   for (let tick = 0; tick < (opts.maxSeconds ?? 240) / DT; tick++) {
@@ -59,6 +61,10 @@ function drive(track: Track, opts: { lane?: number; throttle?: (pos: number) => 
       (run.surfaceSpeed[name] ??= []).push(s.speed);
       if (track.slope[s.idx] > 0.12 && tick > 200) run.minSpeedUphill = Math.min(run.minSpeedUphill, s.speed);
     }
+    if (s.water) {
+      run.waterSpeed = (run.waterSpeed * run.underwater + s.speed * DT) / (run.underwater + DT);
+      run.underwater += DT;
+    }
     run.maxY = Math.max(run.maxY, s.y);
     run.maxSpeed = Math.max(run.maxSpeed, s.speed);
     if (travel >= track.n) {
@@ -73,15 +79,16 @@ function drive(track: Track, opts: { lane?: number; throttle?: (pos: number) => 
 for (const id of Object.keys(TRACK_DEFS)) {
   const track = getTrack(id);
   const run = drive(track);
-  console.log(`${track.def.name}: lap ${run.lapSeconds.toFixed(1)} s, height ${track.minY.toFixed(0)}..${track.maxY.toFixed(0)} m, ${run.jumps} jumps, ${run.airSeconds.toFixed(2)} s in the air (longest ${run.longestAir.toFixed(2)} s), ${run.respawns} respawns, top speed ${run.maxSpeed.toFixed(1)}`);
+  const timed = track.hazards.some((h) => h.def.kind === "collapse");
+  console.log(`${track.def.name}: lap ${run.lapSeconds.toFixed(1)} s, height ${track.minY.toFixed(0)}..${track.maxY.toFixed(0)} m, ${run.jumps} jumps, ${run.airSeconds.toFixed(1)} s in the air, ${run.respawns} respawns, top speed ${run.maxSpeed.toFixed(1)}, ${run.underwater.toFixed(1)} s under water`);
   check("a full-throttle lap completes", run.finished);
-  check("no falls on the racing line", run.respawns === 0, `${run.respawns}`);
+  // A section that drops away on a timer can catch a kart; everything else must be clean.
+  check(timed ? "at most a couple of falls (timed collapsing sections)" : "no falls on the racing line", run.respawns <= (timed ? 3 : 0), `${run.respawns}`);
   check("speed stays within limits", run.maxSpeed <= (KART.maxSpeed + KART.boostExtraSpeed) * 1.35 + 0.01, run.maxSpeed.toFixed(1));
   check("grounded karts stay on the road surface", run.floatError === 0, run.floatError.toFixed(2));
-  if (track.maxY - track.minY < 1) {
-    check("flat track: the kart never leaves the ground", run.jumps === 0 && run.airSeconds === 0);
-    continue;
-  }
+  if (track.def.gaps?.length) check("every jump is cleared at racing speed", run.jumps >= track.def.gaps.length);
+  if (track.waterLevel > -Infinity) check("part of the lap is driven under water, and it is slower", run.underwater > 4 && run.waterSpeed < run.maxSpeed * 0.9, `${run.waterSpeed.toFixed(1)} m/s average under water`);
+  if (id !== "proving-grounds") continue;
   check("jumps happen and land", run.jumps >= 2 && run.longestAir > 0.5 && run.longestAir < 3, `${run.jumps} jumps`);
   check("the kart keeps climbing on the steepest hills", run.minSpeedUphill > 12, `${run.minSpeedUphill.toFixed(1)} m/s slowest uphill`);
   const avg = (name: string) => {
@@ -97,7 +104,7 @@ for (const id of Object.keys(TRACK_DEFS)) {
   // Too slow for the ravine: the kart must fall, be put back before the run-up, and then make it.
   const g = track.def.gaps![0];
   const s = placeOnGrid(createKartState(), track, 0);
-  const input: KartInput = { throttle: 0, steer: 0, drift: false, reset: false };
+  const input: KartInput = { throttle: 0, steer: 0, drift: false, reset: false, use: false };
   let fell = false;
   let cleared = false;
   let phase = 0;
@@ -129,7 +136,7 @@ for (const id of Object.keys(TRACK_DEFS)) {
     const u = c.idx / track.n;
     const i = (c.idx + 8) % track.n;
     const inZone = u > o.from + 0.004 && u < o.to;
-    const lane = inZone ? -40 : 0;
+    const lane = inZone ? (o.side > 0 ? 40 : -40) : 0;
     const want = Math.atan2(track.px[i] + track.nx[i] * lane - c.x, track.pz[i] + track.nz[i] * lane - c.z);
     decodeInput(INPUT_BITS.ACCEL, Math.max(-1, Math.min(1, -angleDiff(want, c.heading) * 3)), input);
     const bx = c.x;

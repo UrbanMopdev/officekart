@@ -23,7 +23,7 @@ export async function getServer(port = 2599): Promise<TestServer> {
   const entry = path.resolve(__dirname, "../dist/server.js");
   if (!existsSync(entry)) throw new Error("Build the server first: npm run build -w @office-kart/game-server");
   const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, PORT: String(port), NODE_ENV: "test", MATCHMAKE_PER_MINUTE: "100000" },
+    env: { ...process.env, PORT: String(port), NODE_ENV: "test", MATCHMAKE_PER_MINUTE: "100000", CHAOS_EVENTS: process.env.CHAOS_EVENTS ?? "off" },
     stdio: ["ignore", process.env.SERVER_LOGS ? "inherit" : "ignore", "inherit"],
   });
   const httpUrl = `http://127.0.0.1:${port}`;

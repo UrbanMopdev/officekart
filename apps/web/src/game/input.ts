@@ -6,7 +6,7 @@ let resetQueued = false;
 let steer = 0;
 let enabled = false;
 
-const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyR", "ShiftLeft", "ShiftRight"]);
+const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyR", "ShiftLeft", "ShiftRight", "KeyE"]);
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
@@ -36,6 +36,7 @@ export function sampleInput(): [number, number] {
   if (down.has("KeyW") || down.has("ArrowUp")) bits |= INPUT_BITS.ACCEL;
   if (down.has("KeyS") || down.has("ArrowDown")) bits |= INPUT_BITS.BRAKE;
   if (down.has("Space")) bits |= INPUT_BITS.DRIFT;
+  if (down.has("ShiftLeft") || down.has("ShiftRight") || down.has("KeyE")) bits |= INPUT_BITS.USE;
   if (resetQueued) {
     bits |= INPUT_BITS.RESET;
     resetQueued = false;

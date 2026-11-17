@@ -69,6 +69,17 @@ export const PROVING_GROUNDS: TrackDef = {
     { type: "dirt", from: 0.7, to: 0.765 },
     { type: "sand", from: 0.85, to: 0.88, lateral: [0.5, 7.5] },
   ],
+  hazards: [
+    { kind: "roller", at: 0.105, radius: 2.4, period: 5, amp: 6, look: "boulder" },
+    { kind: "spinner", at: 0.245, length: 12, period: 4.5, look: "bar" },
+    { kind: "runner", from: 0.345, to: 0.3, lateral: -3, radius: 2.2, period: 6, look: "boulder" },
+    { kind: "geyser", at: 0.42, lateral: 3.5, radius: 3, period: 5, active: 0.3, power: 15 },
+    { kind: "gate", at: 0.66, period: 6, open: 0.62, look: "laser" },
+    { kind: "collapse", from: 0.725, to: 0.745, period: 9, solid: 0.72 },
+    { kind: "roller", at: 0.8, radius: 2, period: 3.6, amp: 5.5, phase: 0.3, look: "boulder" },
+  ],
+  winds: [{ from: 0.555, to: 0.6, push: 6, period: 4 }],
+  features: ["32 m climb", "Ravine jump", "Boulders", "Ice and mud"],
   boostPads: [
     { at: 0.03, lateral: 0, halfWidth: 2.6, length: 7 },
     { at: 0.3, lateral: 3.2, halfWidth: 2.6, length: 7 },

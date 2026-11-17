@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KART_COLORS, MAX_LAPS, MAX_PLAYERS, MIN_LAPS, MSG, TRACK_DEFS, getTrack } from "@office-kart/shared";
+import { CHAOS_LEVELS, KART_COLORS, MAX_LAPS, MAX_PLAYERS, MIN_LAPS, MSG, SURFACE_TYPES, TRACK_DEFS, getTrack } from "@office-kart/shared";
 import { net } from "../net/connection";
 import { useMe, useStore, type Quality } from "../store";
 import { Button, Panel } from "./common";
@@ -11,6 +11,8 @@ export function Lobby() {
   const [copied, setCopied] = useState<"idle" | "copied" | "manual">("idle");
   const quality = useStore((s) => s.quality);
   const setQuality = useStore((s) => s.setQuality);
+  const settings = useStore((s) => s.settings);
+  const setSettings = useStore((s) => s.setSettings);
   const isHost = room.hostId === myId;
   const link = `${location.origin}/r/${room.code}`;
   const others = room.players.filter((p) => p.connected && p.id !== room.hostId);
@@ -62,6 +64,7 @@ export function Lobby() {
               <li key={p.id} className={`flex items-center gap-3 rounded-2xl px-3 py-2 ${p.id === myId ? "bg-white/15" : "bg-white/5"}`}>
                 <span className="h-7 w-7 shrink-0 rounded-full border-2 border-white/70" style={{ background: KART_COLORS[p.color] }} />
                 <span className="min-w-0 flex-1 truncate font-bold">
+                  {p.points > 0 && <span className="mr-2 rounded-full bg-white/15 px-2 py-0.5 text-xs tabular-nums">{p.points} pts</span>}
                   {p.name}
                   {p.id === myId && <span className="ml-2 text-xs font-normal text-white/50">you</span>}
                 </span>
@@ -112,7 +115,7 @@ export function Lobby() {
               </div>
               <div>
                 <dt className="mb-1.5 text-white/60">Track</dt>
-                <dd className="grid gap-2">
+                <dd className="grid max-h-64 gap-2 overflow-y-auto pr-1">
                   {Object.values(TRACK_DEFS).map((t) => {
                     const selected = t.id === room.trackId;
                     const lengthKm = (getTrack(t.id).length / 1000).toFixed(1);
@@ -132,10 +135,43 @@ export function Lobby() {
                             {lengthKm} km lap
                           </span>
                         </span>
-                        <span className="mt-0.5 block text-xs font-normal text-white/60">{t.blurb}</span>
+                        {selected && <span className="mt-0.5 block text-xs font-normal text-white/60">{t.blurb}</span>}
                       </button>
                     );
                   })}
+                </dd>
+              </div>
+              <div className="rounded-2xl bg-white/5 px-3 py-2 text-xs text-white/70">
+                {(() => {
+                  const t = getTrack(room.trackId);
+                  const minutes = Math.max(1, Math.round((t.length / 26) * room.laps / 60));
+                  const terrain = [...new Set(t.zones.map((z) => SURFACE_TYPES[z.type].replace("conveyorBack", "conveyor")))];
+                  if (t.waterLevel > -Infinity) terrain.push("water");
+                  return (
+                    <>
+                      <div className="mb-1 flex flex-wrap gap-1.5">
+                        {(t.def.features ?? []).map((f) => (
+                          <span key={f} className="rounded-full bg-indigo-500/40 px-2 py-0.5 font-bold text-white">
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                      <div>
+                        {t.def.difficulty ?? "Medium"} · about {minutes} min race · {t.hazards.length} moving hazards · climbs {Math.round(t.maxY - t.minY)} m
+                      </div>
+                      <div>Terrain: {["asphalt", ...terrain].join(", ")}</div>
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-white/60">Chaos</dt>
+                <dd className="flex rounded-xl bg-white/10 p-1">
+                  {CHAOS_LEVELS.map((label, i) => (
+                    <button key={label} type="button" disabled={!isHost} aria-pressed={room.chaos === i} onClick={() => net.send(MSG.SETTINGS, { chaos: i })} className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${room.chaos === i ? (i === 2 ? "bg-rose-500 text-white" : "bg-amber-400 text-slate-900") : "text-white/70"}`}>
+                      {label}
+                    </button>
+                  ))}
                 </dd>
               </div>
               <div className="flex items-center justify-between">
@@ -160,7 +196,7 @@ export function Lobby() {
 
           <Panel>
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-black">Graphics</h2>
+              <h2 className="text-lg font-black">Graphics and sound</h2>
               <div className="flex rounded-xl bg-white/10 p-1" role="group" aria-label="Graphics quality">
                 {(["high", "medium", "low"] as Quality[]).map((q) => (
                   <button
@@ -176,6 +212,20 @@ export function Lobby() {
               </div>
             </div>
             <p className="mt-2 text-xs text-white/45">High adds soft shadows, ambient occlusion and bloom. Drop to Medium or Low if the race feels choppy.</p>
+            <div className="mt-3 space-y-2 text-sm">
+              {(["master", "music", "sfx"] as const).map((k) => (
+                <label key={k} className="flex items-center gap-3">
+                  <span className="w-16 font-bold capitalize text-white/70">{k === "sfx" ? "Effects" : k}</span>
+                  <input type="range" min={0} max={1} step={0.05} value={settings[k]} onChange={(e) => setSettings({ [k]: Number(e.target.value) })} className="flex-1 accent-amber-400" aria-label={`${k} volume`} />
+                </label>
+              ))}
+              <label className="flex items-center gap-2 text-white/80">
+                <input type="checkbox" checked={settings.shake} onChange={(e) => setSettings({ shake: e.target.checked })} className="accent-amber-400" /> Camera shake
+              </label>
+              <label className="flex items-center gap-2 text-white/80">
+                <input type="checkbox" checked={settings.reducedFx} onChange={(e) => setSettings({ reducedFx: e.target.checked })} className="accent-amber-400" /> Reduced visual effects
+              </label>
+            </div>
           </Panel>
 
           <div className="flex gap-3">

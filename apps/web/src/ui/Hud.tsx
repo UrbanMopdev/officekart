@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { KART_COLORS, formatRaceTime, getTrack, ordinal } from "@office-kart/shared";
+import { EVENT_INFO, ITEMS, KART_COLORS, TICK_RATE, formatRaceTime, getTrack, ordinal } from "@office-kart/shared";
 import { kartActive, kartPos } from "../game/shared";
 import { net } from "../net/connection";
 import { useMe, useStore } from "../store";
@@ -120,6 +120,48 @@ function PingBadge() {
   );
 }
 
+/** Announces a chaos event four seconds ahead, then counts it down. */
+function EventBanner() {
+  const room = useStore((s) => s.room)!;
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((n) => n + 1), 250);
+    return () => clearInterval(id);
+  }, []);
+  if (!room.eventId || room.phase !== "racing") return null;
+  const tick = net.raceTick();
+  if (tick >= room.eventTo) return null;
+  const info = EVENT_INFO[room.eventId];
+  const coming = tick < room.eventFrom;
+  const seconds = Math.max(0, Math.ceil(((coming ? room.eventFrom : room.eventTo) - tick) / TICK_RATE));
+  return (
+    <div className="absolute inset-x-0 top-24 flex justify-center">
+      <div className={`animate-pop rounded-2xl px-5 py-2.5 text-center shadow-xl ${coming ? "bg-amber-400 text-slate-900" : "bg-rose-600 text-white"}`}>
+        <div className="text-xs font-black uppercase tracking-widest">{coming ? `Incoming in ${seconds}` : `${seconds} s left`}</div>
+        <div className="text-2xl font-black">{info.name}</div>
+        <div className="text-sm font-bold opacity-80">{info.text}</div>
+      </div>
+    </div>
+  );
+}
+
+function ItemSlot({ item, charges }: { item: number; charges: number }) {
+  const it = ITEMS[item];
+  return (
+    <div className="absolute left-1/2 top-[4.6rem] -translate-x-1/2 text-center">
+      <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border-4 text-4xl ${item ? "animate-pop border-amber-300 bg-slate-900/75" : "border-white/25 bg-slate-900/40"}`} key={item}>
+        {it?.icon}
+        {charges > 1 && <span className="absolute -right-1 -top-1 rounded-full bg-amber-400 px-1.5 text-xs font-black text-slate-900">{charges}</span>}
+      </div>
+      {item > 0 && (
+        <div className="text-outline mt-1 text-xs font-black">
+          {it.name} <span className="font-bold text-white/70">· Shift</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Hud() {
   const room = useStore((s) => s.room)!;
   const myId = useStore((s) => s.myId);
@@ -127,9 +169,21 @@ export function Hud() {
   const me = useMe();
   const racers = room.players.filter((p) => p.racing).sort((a, b) => a.place - b.place);
   const spectating = !me?.racing;
+  const underwater = useStore((s) => s.underwater);
+  const watching = spectating || !!me?.finished;
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none p-4">
+      {underwater && <div className="absolute inset-0 bg-cyan-500/15 mix-blend-screen" />}
+      {!spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} />}
+      <EventBanner />
+      {watching && racers.length > 1 && (
+        <div className="absolute inset-x-0 bottom-24 text-center">
+          <span className="rounded-full bg-slate-900/70 px-4 py-2 text-sm font-bold">
+            Spectating · <Kbd>←</Kbd> <Kbd>→</Kbd> switch racer
+          </span>
+        </div>
+      )}
       {/* Position and lap */}
       {!spectating && me && (
         <div className="absolute left-4 top-4">
@@ -138,7 +192,7 @@ export function Hud() {
             <span className="ml-2 text-2xl text-white/80">/ {racers.length}</span>
           </div>
           <div className="text-outline mt-2 text-2xl font-black">
-            Lap {Math.max(1, me.lap)} <span className="text-white/70">/ {room.laps}</span>
+            {me.lap >= room.laps && room.laps > 1 && !me.finished ? <span className="text-rose-300">Final lap</span> : <>Lap {Math.max(1, me.lap)} <span className="text-white/70">/ {room.laps}</span></>}
           </div>
         </div>
       )}

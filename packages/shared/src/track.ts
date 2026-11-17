@@ -16,10 +16,10 @@ export interface BoostPadDef {
   length: number;
 }
 
-export type TrackTheme = "office" | "neon" | "alpine";
+export type TrackTheme = "office" | "neon" | "sky" | "alpine" | "volcano" | "frozen" | "jungle" | "sea" | "chaos";
 
 /** Road surfaces. The index is what the simulation stores. */
-export const SURFACE_TYPES = ["asphalt", "dirt", "mud", "ice", "snow", "sand", "boost"] as const;
+export const SURFACE_TYPES = ["asphalt", "dirt", "mud", "ice", "snow", "sand", "boost", "oil", "conveyor", "conveyorBack"] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
 
 /** A height key: at lap fraction `at` the road is `y` high. "linear" makes the stretch ending here a straight ramp. */
@@ -39,6 +39,64 @@ export interface GapDef {
   to: number;
   /** Where a kart that falls is put back (start of the run-up). */
   respawn: number;
+}
+
+/** Moving hazards. All motion is a fixed function of race time, so every player sees the same thing. */
+export type HazardDef =
+  /** Rolls from side to side across the road. */
+  | { kind: "roller"; at: number; radius: number; period: number; amp: number; phase?: number; look?: string }
+  /** Travels along the road between two lap fractions, then starts again. from > to runs against the traffic. */
+  | { kind: "runner"; from: number; to: number; lateral: number; radius: number; period: number; phase?: number; look?: string }
+  /** A bar spinning flat over the road. */
+  | { kind: "spinner"; at: number; lateral?: number; length: number; period: number; phase?: number; look?: string }
+  /** A barrier across the whole road that switches on and off. `open` is the fraction of each cycle it is off. */
+  | { kind: "gate"; at: number; period: number; open: number; phase?: number; look?: string }
+  /** Launches karts into the air while it is erupting. */
+  | { kind: "geyser"; at: number; lateral: number; radius: number; period: number; active: number; power: number; phase?: number }
+  /** A stretch of road that drops away for part of each cycle. `solid` is the fraction it is there. */
+  | { kind: "collapse"; from: number; to: number; period: number; solid: number; phase?: number }
+  /** A bridge over a gap that slides from side to side. */
+  | { kind: "platform"; from: number; to: number; halfWidth: number; amp: number; period: number; phase?: number };
+
+/** A stretch where karts are pushed sideways: crosswinds, fans, underwater currents. */
+export interface WindDef {
+  from: number;
+  to: number;
+  /** Sideways push in m/s; positive is to the right. */
+  push: number;
+  /** Seconds per gust cycle; omit for a steady push. */
+  period?: number;
+}
+
+export interface Hazard {
+  def: HazardDef;
+  i0: number;
+  i1: number;
+  /** Samples covered (i0 to i1 going forwards). */
+  span: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface HazardPose {
+  x: number;
+  y: number;
+  z: number;
+  /** Sideways offset for rollers and platforms; rotation for spinners. */
+  lat: number;
+  ang: number;
+  /** Dangerous / erupting / solid, depending on the kind. */
+  on: boolean;
+  /** About to change state: show a warning. */
+  warn: boolean;
+}
+
+export interface ItemBox {
+  x: number;
+  y: number;
+  z: number;
+  idx: number;
 }
 
 export interface OpenSideDef {
@@ -62,7 +120,7 @@ export interface TrackDef {
   checkpointCount: number;
   defaultLaps: number;
   boostPads: BoostPadDef[];
-  difficulty?: "Easy" | "Medium" | "Hard" | "Extreme";
+  difficulty?: "Easy" | "Medium" | "Hard" | "Extreme" | "Insane";
   /** Road height round the lap. Omit for a flat track. */
   elevation?: ElevationKey[];
   /** 0..1: how strongly corners are banked automatically. */
@@ -70,6 +128,15 @@ export interface TrackDef {
   surfaces?: SurfaceDef[];
   gaps?: GapDef[];
   openSides?: OpenSideDef[];
+  hazards?: HazardDef[];
+  winds?: WindDef[];
+  /** Karts below this height are under water. */
+  waterLevel?: number;
+  /** Lap fractions with a row of item boxes. Defaults to six evenly spaced rows. */
+  itemRows?: number[];
+  /** Short labels for the lobby preview. */
+  features?: string[];
+  music?: number;
 }
 
 export interface SurfaceZone {
@@ -129,6 +196,12 @@ export interface Track {
   zones: SurfaceZone[];
   minY: number;
   maxY: number;
+  hazards: Hazard[];
+  /** 1 where the road is drawn and simulated by a hazard (collapsing section, moving platform). */
+  dyn: Uint8Array;
+  winds: { i0: number; i1: number; push: number; period: number }[];
+  boxes: ItemBox[];
+  waterLevel: number;
 }
 
 export interface Located {
@@ -278,7 +351,34 @@ export function buildTrack(def: TrackDef, targetSpacing = 2): Track {
     type: SURFACE_TYPES.indexOf(z.type),
   }));
 
-  const track: Track = { def, n, spacing, length, px, pz, tx, tz, nx, nz, checkpoints, grid: [], pads: [], hy, slope, bankT, gap, unsafe, respawnAt, open, zones, minY, maxY };
+  // 4c. Moving hazards, wind zones and item boxes.
+  const dyn = new Uint8Array(n);
+  const hazards: Hazard[] = (def.hazards ?? []).map((h) => {
+    const i0 = idxOf("at" in h ? h.at : h.from);
+    const i1 = idxOf("at" in h ? h.at : h.to);
+    const forward = (i1 - i0 + n) % n;
+    const span = h.kind === "runner" && h.from > h.to ? forward - n : forward;
+    if (h.kind === "collapse" || h.kind === "platform") {
+      for (let i = i0; i !== i1; i = (i + 1) % n) dyn[i] = 1;
+      // Never respawn a kart on or just before a section that may not be there.
+      const r = (i0 - 12 + n) % n;
+      for (let i = (r + 1) % n; i !== (i1 + 3) % n; i = (i + 1) % n) {
+        unsafe[i] = 1;
+        respawnAt[i] = r;
+      }
+    }
+    const lat = "lateral" in h && h.lateral ? h.lateral : 0;
+    return { def: h, i0, i1, span, x: px[i0] + nx[i0] * lat, y: hy[i0] + lat * bankT[i0], z: pz[i0] + nz[i0] * lat };
+  });
+  const winds = (def.winds ?? []).map((w) => ({ i0: idxOf(w.from), i1: idxOf(w.to), push: w.push, period: w.period ?? 0 }));
+  const boxes: ItemBox[] = [];
+  for (const at of def.itemRows ?? [0.09, 0.26, 0.42, 0.58, 0.74, 0.91]) {
+    const i = idxOf(at);
+    if (gap[i] || dyn[i]) continue;
+    for (const lat of [-4.8, -1.6, 1.6, 4.8]) boxes.push({ x: px[i] + nx[i] * lat, y: hy[i] + lat * bankT[i] + 1.3, z: pz[i] + nz[i] * lat, idx: i });
+  }
+
+  const track: Track = { def, n, spacing, length, px, pz, tx, tz, nx, nz, checkpoints, grid: [], pads: [], hy, slope, bankT, gap, unsafe, respawnAt, open, zones, minY, maxY, hazards, dyn, winds, boxes, waterLevel: def.waterLevel ?? -Infinity };
 
   // 5. Starting grid for 12: two staggered columns behind the line.
   for (let slot = 0; slot < 12; slot++) {
@@ -372,13 +472,86 @@ export function surfaceAt(track: Track, idx: number, lateral: number): number {
   return 0;
 }
 
+const frac = (v: number) => v - Math.floor(v);
+const TAU = Math.PI * 2;
+
+/** Where a hazard is, and what it is doing, at race time `time` (seconds). */
+export function hazardPose(track: Track, h: Hazard, time: number, out: HazardPose): HazardPose {
+  const d = h.def;
+  const cyc = frac(time / d.period + (d.phase ?? 0));
+  out.x = h.x;
+  out.y = h.y;
+  out.z = h.z;
+  out.lat = 0;
+  out.ang = 0;
+  out.on = true;
+  out.warn = false;
+  switch (d.kind) {
+    case "roller": {
+      out.lat = d.amp * Math.sin(cyc * TAU);
+      out.x = track.px[h.i0] + track.nx[h.i0] * out.lat;
+      out.z = track.pz[h.i0] + track.nz[h.i0] * out.lat;
+      out.y = track.hy[h.i0] + out.lat * track.bankT[h.i0] + d.radius;
+      out.ang = out.lat / d.radius;
+      break;
+    }
+    case "runner": {
+      const f = (((h.i0 + h.span * cyc) % track.n) + track.n) % track.n;
+      const i = Math.floor(f);
+      const j = (i + 1) % track.n;
+      const k = f - i;
+      out.x = track.px[i] + (track.px[j] - track.px[i]) * k + track.nx[i] * d.lateral;
+      out.z = track.pz[i] + (track.pz[j] - track.pz[i]) * k + track.nz[i] * d.lateral;
+      out.y = track.hy[i] + (track.hy[j] - track.hy[i]) * k + d.radius;
+      out.ang = (h.span * cyc * track.spacing) / d.radius;
+      // Fade in and out at the ends of the run so it never pops into a kart.
+      out.on = cyc > 0.03 && cyc < 0.97;
+      break;
+    }
+    case "spinner":
+      out.ang = cyc * TAU;
+      out.y = h.y + 1.1;
+      break;
+    case "gate":
+      out.on = cyc >= d.open;
+      out.warn = cyc >= d.open - 0.14 && cyc < d.open;
+      break;
+    case "geyser":
+      out.on = cyc < d.active;
+      out.warn = cyc > 0.84;
+      break;
+    case "collapse":
+      out.on = cyc < d.solid;
+      out.warn = cyc > d.solid - 0.16 && cyc < d.solid;
+      break;
+    case "platform":
+      out.lat = d.amp * Math.sin(cyc * TAU);
+      break;
+  }
+  return out;
+}
+
+const poseScratch: HazardPose = { x: 0, y: 0, z: 0, lat: 0, ang: 0, on: true, warn: false };
+
 /**
  * Height of the road under a point described by `locate`. Returns -Infinity
- * where there is no road: inside a gap, or beyond a missing barrier.
+ * where there is no road: inside a gap, beyond a missing barrier, on a section
+ * that has dropped away, or beside a moving platform.
  */
-export function groundHeight(track: Track, idx: number, along: number, lateral: number): number {
+export function groundHeight(track: Track, idx: number, along: number, lateral: number, time = 0): number {
   const { n, hy } = track;
   if (track.gap[idx]) return -Infinity;
+  if (track.dyn[idx]) {
+    for (const h of track.hazards) {
+      const k = h.def.kind;
+      if (k !== "collapse" && k !== "platform") continue;
+      const inside = h.i0 <= h.i1 ? idx >= h.i0 && idx < h.i1 : idx >= h.i0 || idx < h.i1;
+      if (!inside) continue;
+      hazardPose(track, h, time, poseScratch);
+      if (k === "collapse" && !poseScratch.on) return -Infinity;
+      if (h.def.kind === "platform" && Math.abs(lateral - poseScratch.lat) > h.def.halfWidth) return -Infinity;
+    }
+  }
   const o = track.open[idx];
   if (o !== 0) {
     const edge = track.def.wallHalfWidth + 0.4;

@@ -8,6 +8,9 @@ import {
   DEFAULT_TRACK_ID,
   DT,
   MSG,
+  TICK_MS,
+  hazardTime,
+  type FxMessage,
   Predictor,
   ROOM_NAME,
   SNAPSHOT_STRIDE,
@@ -55,6 +58,8 @@ export interface KartSample {
   heading: number;
   speed: number;
   flags: number;
+  /** Status-effect bits (see FX). */
+  fx: number;
 }
 
 function localNow(): number {
@@ -89,9 +94,17 @@ function toView(state: any): RoomView {
       finished: p.finished,
       finishMs: p.finishMs,
       bestLapMs: p.bestLapMs,
+      item: p.item ?? 0,
+      charges: p.charges ?? 0,
+      wins: p.wins ?? 0,
+      points: p.points ?? 0,
+      vote: p.vote ?? "",
+      note: p.note ?? "",
     });
   });
   players.sort((a, b) => a.slot - b.slot);
+  const awards: RoomView["awards"] = [];
+  state.awards?.forEach((a: any) => awards.push({ title: a.title, name: a.name, detail: a.detail }));
   return {
     code: state.code,
     phase: state.phase as Phase,
@@ -101,6 +114,13 @@ function toView(state: any): RoomView {
     raceStartAt: state.raceStartAt,
     raceNumber: state.raceNumber,
     players,
+    chaos: state.chaos ?? 0,
+    eventId: state.eventId ?? 0,
+    eventFrom: state.eventFrom ?? 0,
+    eventTo: state.eventTo ?? 0,
+    hzOff: state.hzOff ?? 0,
+    voteEndsAt: state.voteEndsAt ?? 0,
+    awards: awards,
   };
 }
 
@@ -116,6 +136,13 @@ class Net {
   private acc = 0;
   private leaving = false;
   private reconnecting = false;
+  private previewStart = 0;
+  /** Things on the track from the latest snapshot: [id, type, x, y, z, aux] each. */
+  entities: number[] = [];
+  /** Item boxes that are currently empty. */
+  taken = new Set<number>();
+  /** Subscribers to one-off happenings (hits, pickups, item use) for sound and effects. */
+  readonly fxListeners = new Set<(fx: FxMessage) => void>();
 
   readonly predictor = new Predictor(getTrack(DEFAULT_TRACK_ID));
 
@@ -125,14 +152,15 @@ class Net {
   startPreview(trackId: string, at: number): void {
     const track = getTrack(trackId);
     const players: PlayerView[] = ["You", "Priya", "Marcus", "Jo", "Sam", "Ines"].map((name, i) => ({
-      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0,
+      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, charges: 1, wins: 0, points: 0, vote: "", note: "",
     }));
     useStore.getState().set({
       status: "connected",
       myId: "p0",
-      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players },
+      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players, chaos: 0, eventId: 0, eventFrom: 0, eventTo: 0, hzOff: 0, voteEndsAt: 0, awards: [] },
     });
     const t0 = performance.now();
+    this.previewStart = t0;
     const moving = new URLSearchParams(location.search).has("drive");
     this.preview = (slot, out) => {
       const travel = moving ? ((performance.now() - t0) / 1000) * 28 : 0;
@@ -149,6 +177,7 @@ class Net {
       out.speed = 28;
       // A drifting kart with sparks, a boosting kart, and the rest cruising.
       out.flags = slot === 1 ? 2 | (2 << 3) : slot === 2 ? 4 : slot === 4 ? 1 | (3 << 3) : 0;
+      out.fx = slot === 3 ? 2 : out.y < track.waterLevel - 0.8 ? 64 : 0;
       return true;
     };
   }
@@ -217,8 +246,13 @@ class Net {
     room.onStateChange((state) => this.onState(state));
     if (room.state?.players) this.onState(room.state);
 
-    room.onMessage(MSG.SNAPSHOT, (msg: [number, number, number[]]) => {
+    room.onMessage(MSG.FX, (fx: FxMessage) => {
+      for (const fn of this.fxListeners) fn(fx);
+    });
+    room.onMessage(MSG.SNAPSHOT, (msg: [number, number, number[], number[]?, number[]?]) => {
       this.lastHeardAt = performance.now();
+      this.entities = msg[3] ?? [];
+      this.taken = new Set(msg[4] ?? []);
       this.snaps.push({ t: msg[0], flat: msg[2] });
       if (this.snaps.length > 40) this.snaps.shift();
     });
@@ -321,7 +355,16 @@ class Net {
       this.predictor.reset(getTrack(view.trackId));
       this.snaps = [];
       this.acc = 0;
+      this.entities = [];
+      this.taken = new Set();
+      useStore.getState().set({ spectate: 0 });
     }
+    // Chaos events and hazard timing are part of the simulation, so prediction needs them too.
+    const ctx = this.predictor.ctx;
+    ctx.event = view.eventId;
+    ctx.from = view.eventFrom;
+    ctx.to = view.eventTo;
+    ctx.hzOff = view.hzOff;
     useStore.getState().set({ room: view });
   }
 
@@ -380,6 +423,19 @@ class Net {
     return this.acc / DT;
   }
 
+  /** Race tick as the server counts it, estimated from the clock. */
+  raceTick(): number {
+    const room = useStore.getState().room;
+    if (this.preview) return (performance.now() - this.previewStart) / TICK_MS;
+    return room ? Math.max(0, (this.serverNow() - room.raceStartAt) / TICK_MS) : 0;
+  }
+
+  /** The time hazards are drawn at. While driving it is our own kart's clock, so what you see is what can hit you. */
+  hazardClock(alpha: number): number {
+    const tick = this.isDriving() ? this.predictor.state.tick + alpha : this.raceTick();
+    return hazardTime(tick, this.predictor.ctx);
+  }
+
   /** Predicted, smoothed state of the local kart. `alpha` is the fraction of a tick elapsed. */
   sampleOwn(alpha: number, out: KartSample): void {
     const p = this.predictor;
@@ -391,6 +447,7 @@ class Net {
     out.heading = a.heading + angleDiff(b.heading, a.heading) * alpha + p.errH;
     out.speed = b.speed;
     out.flags = 0;
+    out.fx = 0;
   }
 
   /** Interpolated state of any kart from the snapshot buffer. Returns false if unknown. */
@@ -418,6 +475,7 @@ class Net {
       out.speed = as;
       out.flags = a.flat[ia + 5];
       out.y = a.flat[ia + 6] ?? 0;
+      out.fx = a.flat[ia + 7] ?? 0;
       return true;
     }
     const span = b.t - a.t;
@@ -427,6 +485,7 @@ class Net {
     out.heading = ah + angleDiff(b.flat[ib + 3], ah) * t;
     out.speed = as + (b.flat[ib + 4] - as) * t;
     out.flags = b.flat[ib + 5];
+    out.fx = b.flat[ib + 7] ?? 0;
     const ay = a.flat[ia + 6] ?? 0;
     out.y = ay + ((b.flat[ib + 6] ?? 0) - ay) * t;
     return true;

@@ -10,8 +10,7 @@ multiplayer race with a server-authoritative simulation, on two long circuits. P
 
 - Private lobbies with a six-character code and a shareable invite link (`/r/ABC123`)
 - 2–12 human racers per lobby, guest nicknames, kart colour selection, ready-up, host settings (track, laps)
-- Three circuits: **Office Dash** (1.9 km, about a minute a lap), **Neon Nights** (2.5 km, about 80
-  seconds) and **Proving Grounds** (1.6 km mountain test track with hills, jumps and mixed terrain)
+- Nine circuits (see Office Kart 2.0 below)
 - Elevation and terrain physics: slopes that speed you up and slow you down, banked corners, jumps with
   limited air control, a ravine gap and an open cliff edge with automatic recovery, and six surface
   types (dirt, mud, ice, snow, sand, boost road) that each handle differently
@@ -26,29 +25,66 @@ multiplayer race with a server-authoritative simulation, on two long circuits. P
 - HUD: position, lap, timer, speed, drift charge, mini-map, live standings, latency indicator
 - Rate limiting, input validation, origin checks, `/health`, structured logs, graceful shutdown
 
-Not built yet: power-ups, the other three tracks, Grand Prix / Team Battle / Time Trial, characters and
-kart classes, audio, gamepad support, PostgreSQL-backed profiles and leaderboards.
+Not built yet: Grand Prix / Team Battle / Time Trial modes, characters and kart classes, gamepad
+support, PostgreSQL-backed profiles and leaderboards.
 
-## Office Kart 2.0 roadmap
+## Office Kart 2.0
 
-The 2.0 specification is being built in its own phase order, each phase proven before the next starts.
+All seven phases of the 2.0 specification have a working first version. Each was checked with automated
+tests before the next was started; none of it has been tuned by people playing yet.
 
-| Phase | Scope | Status |
-|---|---|---|
-| 1 | Elevation, slope physics, ramps and jumps, terrain grip and speed, height-aware collisions, recovery, checkpoint validation, test track | **Done** (Proving Grounds) |
-| 2 | Moving obstacles: rolling, swinging, rotating, platforms, collapsing sections, warnings | Not started |
-| 3 | The eight themed tracks | Not started |
-| 4 | Underwater driving | Not started |
-| 5 | Chaos events and power-ups | Not started |
-| 6 | Music, sound effects, cinematic polish | Not started |
-| 7 | Rivalries, awards, spectating, rematch votes | Not started |
+**Tracks.** Eight circuits plus the test track, each with its own height profile, surfaces, hazards and
+environment: Office Apocalypse, Volcano Mayhem, Deep Sea Disaster, Sky High Insanity, Frozen Frenzy,
+Jungle Temple Chaos, Neon Cyber City, Chaos Dimension, and Proving Grounds. Office Dash and Neon Nights
+became Office Apocalypse and Neon Cyber City.
 
-How Phase 1 works: a track definition can now carry a height profile, automatic banking, surface zones,
-gaps and open edges. The kart simulation in `packages/shared` tracks height and vertical speed, follows
-the road, leaves it over crests and ramp lips, and lands again; the same code predicts your own kart in
-the browser, so jumps feel immediate and still agree with the server. Flat tracks behave exactly as
-before. `npm run test:physics -w @office-kart/game-server` checks all of it offline, including falling
-into the ravine and recovering.
+**Terrain and physics.** Slopes, banking, jumps, gaps and open edges with recovery, and ten surfaces:
+asphalt, dirt, mud, ice, snow, sand, boost road, oil, and conveyors in both directions.
+
+**Moving hazards.** Rollers that sweep the road, runners that travel along it (boulders, a giant
+snowball, cross traffic), spinning bars, gates, geysers that launch karts, sections that drop away on a
+timer, bridges that slide sideways over a gap, and wind and current zones. Hazard motion is a fixed
+function of each kart's own race clock, which travels with its state, so the browser predicts hits
+exactly as the server decides them and no hazard positions are sent over the network. A hit spins the
+kart out briefly and then protects it for a couple of seconds.
+
+**Under water.** Below a track's water level karts are slower, steer more gently and fall at a third of
+normal gravity; holding drift swims upward. Bubbles replace smoke, the view fogs blue and the music is
+muffled.
+
+**Power-ups.** 22 items from boxes on the track, weighted by race position, used with Shift. Everything
+is resolved on the server.
+
+**Chaos events.** Low Gravity, Slippery Road, Mega Windstorm, Obstacle Frenzy, Double Power-Ups, Meteor
+Shower and Thunderstorm, announced four seconds ahead. The host picks Normal, Chaotic or Absolute Mayhem.
+
+**Sound.** Music and effects are synthesised in the browser, so all of it is original. Each track has its
+own style, and the music changes for the lobby, countdown, race, final lap and results. Volume sliders
+for master, music and effects are in the lobby.
+
+**After the race.** Awards from tracked stats, session points and wins, head-to-head streak messages,
+personal bests (per browser), a vote for the next race, and a spectator camera with left/right to switch.
+
+### Not built, or simplified
+
+- Split paths, alternate routes and hidden shortcuts. Every track has one racing line, so there is no
+  Shortcut Master award.
+- Elevators, portals and teleport gates, rotating road sections, and tracks that cross over themselves.
+- Platforms do not carry karts; a platform is a bridge that slides sideways over a gap.
+- Two of the nine chaos events (Lava Surge, Portal Madness), which need routes that open and close.
+- Speed lines, confetti, finish-line camera and celebration animations.
+- Rivalries and standings last for a lobby session only. There is still no database.
+- Three layouts are reused: Deep Sea Disaster mirrors Proving Grounds, Frozen Frenzy mirrors the Neon
+  layout, and Neon Cyber City and Office Apocalypse keep their Phase 1 layouts.
+
+### Checks
+
+```bash
+npm run test:track                                   # geometry of every track
+npm run test:physics -w @office-kart/game-server      # a full lap of every track, jumps, falls, water
+npm run test:race                                    # 29 network checks
+CHAOS_EVENTS=on CHAOS=2 TRACK=chaos-dimension LAPS=1 npm run test:load   # 12 clients, items, mayhem
+```
 
 ## Graphics
 

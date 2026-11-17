@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { FLAG, KART_COLORS } from "@office-kart/shared";
+import { FLAG, FX, KART_COLORS } from "@office-kart/shared";
 import { bake, compose, type PartOptions } from "./builder";
 import { glowTexture, labelTexture } from "./textures";
 
@@ -238,6 +238,11 @@ export class KartVisual {
     }
     this.group.add(b);
 
+    this.bubble = new THREE.Mesh(new THREE.SphereGeometry(2.3, 20, 14), new THREE.MeshPhysicalMaterial({ color: "#7dd3fc", transparent: true, opacity: 0.28, roughness: 0.05, metalness: 0.1, depthWrite: false }));
+    this.bubble.position.y = 0.9;
+    this.bubble.visible = false;
+    this.group.add(this.bubble);
+
     this.blob = new THREE.Mesh(s.blob, s.blobMat);
     this.blob.position.y = 0.09;
     this.blob.scale.set(0.8, 1, 1.25);
@@ -285,13 +290,32 @@ export class KartVisual {
   /** Search hint for finding this kart's place on the track. */
   hint = -1;
   wasAir = false;
+  private sizeNow = 1;
+  private spinAngle = 0;
+  private ghost = false;
+  private readonly bubble: THREE.Mesh;
   private tiltX = 0;
   private tiltZ = 0;
   private lastY = 0;
 
   /** `pitch` and `roll` are the slope of the ground under the kart (nose-up and right-side-up, radians). */
-  update(x: number, y: number, z: number, heading: number, speed: number, flags: number, pitch: number, roll: number, dt: number, time: number): void {
+  update(x: number, y: number, z: number, heading: number, speed: number, flags: number, pitch: number, roll: number, dt: number, time: number, fx = 0): void {
     this.group.position.set(x, y, z);
+    // Status effects: size, spin-out, bubble, ghost.
+    const size = fx & FX.GIANT ? 1.9 : fx & FX.MINI ? 0.6 : 1;
+    this.sizeNow += (size - this.sizeNow) * (1 - Math.exp(-dt * 8));
+    this.group.scale.setScalar(this.sizeNow);
+    this.spinAngle = fx & FX.SPIN ? this.spinAngle + dt * 15 : 0;
+    this.bubble.visible = (fx & FX.SHIELD) !== 0;
+    const ghost = (fx & FX.PHANTOM) !== 0;
+    if (ghost !== this.ghost) {
+      this.ghost = ghost;
+      for (const m of [this.paint, this.accent]) {
+        m.transparent = ghost;
+        m.opacity = ghost ? 0.35 : 1;
+        m.needsUpdate = true;
+      }
+    }
     const airborne = (flags & FLAG.AIRBORNE) !== 0;
     if (airborne && dt > 0) {
       // In the air the nose follows the arc of the jump.
@@ -334,7 +358,7 @@ export class KartVisual {
     this.slide += (-drift * 0.42 - this.slide) * k;
     this.roll += (this.steer * grip * 0.075 + this.slide * 0.22 - this.roll) * k;
     this.pitch += (Math.max(-0.05, Math.min(0.05, -accel * 0.0022)) - this.pitch) * k;
-    this.body.rotation.set(this.pitch, this.slide, this.roll);
+    this.body.rotation.set(this.pitch, this.slide + this.spinAngle, this.roll);
     const rumble = Math.abs(speed) > 1 ? Math.sin(time * 47 + x) * 0.006 * Math.min(1, Math.abs(speed) / 20) : 0;
     this.body.position.y = Math.sin(this.hop * Math.PI) * 0.6 + rumble + (boosting ? Math.sin(time * 70) * 0.012 : 0);
 
