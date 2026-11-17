@@ -1,0 +1,29 @@
+{
+  "name": "@office-kart/game-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=cjs --packages=external --alias:@office-kart/shared=../../packages/shared/src/index.ts --sourcemap --outfile=dist/server.js",
+    "start": "node --enable-source-maps dist/server.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:track": "tsx scripts/validate-track.ts",
+    "test:race": "tsx scripts/race-test.ts",
+    "test:load": "tsx scripts/load-test.ts"
+  },
+  "dependencies": {
+    "@colyseus/core": "^0.16.26",
+    "@colyseus/schema": "^3.0.76",
+    "@colyseus/ws-transport": "^0.16.5",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@office-kart/shared": "*",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "colyseus.js": "^0.16.22",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

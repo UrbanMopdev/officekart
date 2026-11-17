@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  --animate-pop: pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  --animate-rise: rise 0.35s ease-out both;
+
+  @keyframes pop {
+    from { transform: scale(0.3); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  @keyframes rise {
+    from { transform: translateY(14px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-display);
+  background: #1e1b4b;
+  color: #f8fafc;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.text-outline {
+  text-shadow: 0 2px 0 rgb(15 23 42 / 0.85), 0 0 12px rgb(15 23 42 / 0.5);
+}
+
+.menu-bg {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, #6366f1 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 110%, #f59e0b55 0%, transparent 60%),
+    repeating-linear-gradient(135deg, #312e81 0 28px, #2e2a78 28px 56px);
+}

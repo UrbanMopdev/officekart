@@ -1,0 +1,19 @@
+{
+  "name": "office-kart",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Office Kart: browser-based online multiplayer kart racing",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "npm run dev:server & npm run dev:web",
+    "dev:server": "npm run dev -w @office-kart/game-server",
+    "dev:web": "npm run dev -w @office-kart/web",
+    "build": "npm run build -w @office-kart/game-server && npm run build -w @office-kart/web",
+    "typecheck": "npm run typecheck -w @office-kart/shared && npm run typecheck -w @office-kart/game-server && npm run typecheck -w @office-kart/web",
+    "start:server": "npm run start -w @office-kart/game-server",
+    "test:track": "npm run test:track -w @office-kart/game-server",
+    "test:race": "npm run test:race -w @office-kart/game-server",
+    "test:load": "npm run test:load -w @office-kart/game-server"
+  }
+}
