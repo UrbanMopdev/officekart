@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* `tall:` applies on screens with room to spare: desktops and tablets, not a phone held sideways. */
+@custom-variant tall (@media (min-height: 560px));
+
 @theme {
   --font-display: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
   --animate-pop: pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
@@ -17,6 +20,8 @@
 
 html, body, #root {
   height: 100%;
+  /* dvh tracks the visible area on phones as browser bars slide in and out. */
+  height: 100dvh;
   margin: 0;
 }
 
@@ -25,7 +30,18 @@ body {
   background: #1e1b4b;
   color: #f8fafc;
   overflow: hidden;
+  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The race view takes every touch itself: no scrolling, zooming or text selection. */
+.touch-game,
+.touch-game canvas {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .text-outline {

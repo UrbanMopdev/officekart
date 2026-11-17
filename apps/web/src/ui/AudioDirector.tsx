@@ -15,8 +15,22 @@ export function AudioDirector() {
 
   useEffect(() => {
     const unlock = () => audio.unlock();
-    window.addEventListener("pointerdown", unlock);
-    window.addEventListener("keydown", unlock);
+    // Phones only allow sound after a completed tap, so listen for the end of one too.
+    for (const type of ["pointerdown", "keydown", "touchend", "click"]) window.addEventListener(type, unlock);
+
+    // Keep the screen awake during a race (phones dim after a few seconds without a tap).
+    let wake: { release(): Promise<void> } | null = null;
+    const keepAwake = async (on: boolean) => {
+      try {
+        if (on && !wake) wake = await (navigator as unknown as { wakeLock?: { request(t: string): Promise<{ release(): Promise<void> }> } }).wakeLock?.request("screen") ?? null;
+        if (!on && wake) {
+          await wake.release();
+          wake = null;
+        }
+      } catch {
+        wake = null;
+      }
+    };
 
     const onFx = (fx: { kind: string; slot?: number }) => {
       const st = useStore.getState();
@@ -38,6 +52,7 @@ export function AudioDirector() {
       else if (room.phase === "results") music = "results";
       audio.setMusic(music, room ? (getTrack(room.trackId).def.music ?? 0) : 8);
       audio.setUnderwater(st.underwater);
+      void keepAwake(room?.phase === "countdown" || room?.phase === "racing");
 
       if (!room || !me) {
         audio.engine(0, false, false, false, false);
@@ -89,8 +104,8 @@ export function AudioDirector() {
     return () => {
       clearInterval(id);
       net.fxListeners.delete(onFx);
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
+      for (const type of ["pointerdown", "keydown", "touchend", "click"]) window.removeEventListener(type, unlock);
+      void keepAwake(false);
     };
   }, []);
 

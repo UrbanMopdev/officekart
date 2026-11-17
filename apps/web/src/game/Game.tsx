@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { PerformanceMonitor } from "@react-three/drei";
 import { DEFAULT_TRACK_ID, getTrack } from "@office-kart/shared";
-import { useStore, type Quality } from "../store";
+import { IS_TOUCH, useStore, type Quality } from "../store";
 import { Effects } from "./Effects";
 import { World } from "./World";
 
 const STEP_DOWN: Record<Quality, Quality> = { high: "medium", medium: "low", low: "low" };
 /** Sharpest and softest render scale for each quality level. */
-const SCALE: Record<Quality, [number, number]> = { high: [0.8, 1.5], medium: [0.7, 1.25], low: [0.6, 1] };
+const SCALE: Record<Quality, [number, number]> = { high: [0.8, 1.5], medium: [0.7, 1.25], low: IS_TOUCH ? [0.75, 1.5] : [0.6, 1] };
 
 export function Game() {
   const quality = useStore((s) => s.quality);
@@ -24,7 +24,7 @@ export function Game() {
     // Remount only when the quality level itself changes: shadow maps and the render pipeline are set up once.
     <Canvas
       key={quality}
-      className="!absolute inset-0"
+      className="touch-game !absolute inset-0"
       shadows={quality !== "low"}
       // The lobby fly-around sits behind a panel, so it runs at a lighter resolution.
       dpr={lobby ? Math.min(1, dpr) : dpr}

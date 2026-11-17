@@ -1,0 +1,11 @@
+{
+  "name": "Office Kart",
+  "short_name": "Office Kart",
+  "description": "Online multiplayer kart racing for the office",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1e1b4b",
+  "theme_color": "#1e1b4b",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

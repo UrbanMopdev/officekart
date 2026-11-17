@@ -4,6 +4,7 @@ import { kartActive, kartPos } from "../game/shared";
 import { net } from "../net/connection";
 import { useMe, useStore } from "../store";
 import { CONTROLS, Kbd } from "./common";
+import { TouchControls } from "./TouchControls";
 
 /** Run a callback every animation frame while mounted. */
 function useRaf(fn: () => void): void {
@@ -30,7 +31,7 @@ function Countdown({ startAt }: { startAt: number }) {
   if (!label) return null;
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <div key={label} className={`animate-pop text-outline text-[10rem] font-black leading-none ${label === "GO!" ? "text-emerald-300" : "text-amber-300"}`}>
+      <div key={label} className={`animate-pop text-outline text-7xl font-black leading-none tall:text-[10rem] ${label === "GO!" ? "text-emerald-300" : "text-amber-300"}`}>
         {label}
       </div>
     </div>
@@ -45,10 +46,10 @@ function RaceTimer({ startAt, frozenMs }: { startAt: number; frozenMs: number })
     const text = ms > 0 ? formatRaceTime(ms) : "0:00.000";
     if (ref.current.textContent !== text) ref.current.textContent = text;
   });
-  return <div ref={ref} className="text-outline font-mono text-3xl font-black tabular-nums" />;
+  return <div ref={ref} className="text-outline font-mono text-xl font-black tabular-nums tall:text-3xl" />;
 }
 
-function MiniMap({ trackId }: { trackId: string }) {
+function MiniMap({ trackId, small = false }: { trackId: string; small?: boolean }) {
   const room = useStore((s) => s.room)!;
   const myId = useStore((s) => s.myId);
   const dots = useRef<(SVGCircleElement | null)[]>([]);
@@ -86,7 +87,7 @@ function MiniMap({ trackId }: { trackId: string }) {
   });
 
   return (
-    <svg viewBox={map.box} className="h-40 w-52 drop-shadow-lg" aria-label="Mini-map">
+    <svg viewBox={map.box} className={`${small ? "h-20 w-28" : "h-40 w-52"} drop-shadow-lg`} aria-label="Mini-map">
       <path d={map.d} fill="none" stroke="rgba(15,23,42,0.75)" strokeWidth={17} strokeLinejoin="round" />
       <path d={map.d} fill="none" stroke="rgba(248,250,252,0.9)" strokeWidth={9} strokeLinejoin="round" />
       <rect x={map.sx - 2} y={map.sz - 9} width={4} height={18} fill="#0f172a" />
@@ -135,7 +136,7 @@ function EventBanner() {
   const coming = tick < room.eventFrom;
   const seconds = Math.max(0, Math.ceil(((coming ? room.eventFrom : room.eventTo) - tick) / TICK_RATE));
   return (
-    <div className="absolute inset-x-0 top-24 flex justify-center">
+    <div className="absolute inset-x-0 top-12 flex justify-center tall:top-24">
       <div className={`animate-pop rounded-2xl px-5 py-2.5 text-center shadow-xl ${coming ? "bg-amber-400 text-slate-900" : "bg-rose-600 text-white"}`}>
         <div className="text-xs font-black uppercase tracking-widest">{coming ? `Incoming in ${seconds}` : `${seconds} s left`}</div>
         <div className="text-2xl font-black">{info.name}</div>
@@ -171,27 +172,41 @@ export function Hud() {
   const spectating = !me?.racing;
   const underwater = useStore((s) => s.underwater);
   const watching = spectating || !!me?.finished;
+  const compact = useStore((s) => s.touch);
+  const shown = compact ? racers.filter((p, i) => i < 3 || p.id === myId) : racers;
 
   return (
-    <div className="pointer-events-none absolute inset-0 select-none p-4">
+    <div className="touch-game pointer-events-none absolute inset-0 select-none p-4" style={{ paddingLeft: "max(1rem, env(safe-area-inset-left))", paddingRight: "max(1rem, env(safe-area-inset-right))" }}>
       {underwater && <div className="absolute inset-0 bg-cyan-500/15 mix-blend-screen" />}
-      {!spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} />}
+      {!compact && !spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} />}
       <EventBanner />
       {watching && racers.length > 1 && (
         <div className="absolute inset-x-0 bottom-24 text-center">
-          <span className="rounded-full bg-slate-900/70 px-4 py-2 text-sm font-bold">
-            Spectating · <Kbd>←</Kbd> <Kbd>→</Kbd> switch racer
-          </span>
+          {compact ? (
+            <span className="pointer-events-auto inline-flex items-center gap-3 rounded-full bg-slate-900/70 px-2 py-1 text-sm font-bold">
+              <button type="button" aria-label="Previous racer" className="h-10 w-10 rounded-full bg-white/15 text-xl" onClick={() => useStore.getState().set({ spectate: useStore.getState().spectate - 1 })}>
+                ‹
+              </button>
+              Spectating
+              <button type="button" aria-label="Next racer" className="h-10 w-10 rounded-full bg-white/15 text-xl" onClick={() => useStore.getState().set({ spectate: useStore.getState().spectate + 1 })}>
+                ›
+              </button>
+            </span>
+          ) : (
+            <span className="rounded-full bg-slate-900/70 px-4 py-2 text-sm font-bold">
+              Spectating · <Kbd>←</Kbd> <Kbd>→</Kbd> switch racer
+            </span>
+          )}
         </div>
       )}
       {/* Position and lap */}
       {!spectating && me && (
         <div className="absolute left-4 top-4">
-          <div className="text-outline text-7xl font-black leading-none text-amber-300">
+          <div className="text-outline text-4xl font-black leading-none text-amber-300 tall:text-7xl">
             {ordinal(me.place || 1)}
             <span className="ml-2 text-2xl text-white/80">/ {racers.length}</span>
           </div>
-          <div className="text-outline mt-2 text-2xl font-black">
+          <div className="text-outline mt-1 text-base font-black tall:mt-2 tall:text-2xl">
             {me.lap >= room.laps && room.laps > 1 && !me.finished ? <span className="text-rose-300">Final lap</span> : <>Lap {Math.max(1, me.lap)} <span className="text-white/70">/ {room.laps}</span></>}
           </div>
         </div>
@@ -204,11 +219,11 @@ export function Hud() {
       </div>
 
       {/* Standings */}
-      <div className="absolute right-4 top-4 flex w-52 flex-col items-end gap-2">
+      <div className="absolute right-4 top-4 flex w-36 flex-col items-end gap-1 tall:w-52 tall:gap-2" style={{ right: "max(1rem, env(safe-area-inset-right))" }}>
         <PingBadge />
         <ol className="w-full space-y-1">
-          {racers.map((p) => (
-            <li key={p.id} className={`flex items-center gap-2 rounded-xl px-2.5 py-1 text-sm font-bold ${p.id === myId ? "bg-amber-400 text-slate-900" : "bg-slate-900/60"} ${p.connected ? "" : "opacity-50"}`}>
+          {shown.map((p) => (
+            <li key={p.id} className={`flex items-center gap-2 rounded-xl px-2 py-0.5 text-xs font-bold tall:px-2.5 tall:py-1 tall:text-sm ${p.id === myId ? "bg-amber-400 text-slate-900" : "bg-slate-900/60"} ${p.connected ? "" : "opacity-50"}`}>
               <span className="w-4 text-right tabular-nums">{p.place}</span>
               <span className="h-3 w-3 shrink-0 rounded-full border border-white/70" style={{ background: KART_COLORS[p.color] }} />
               <span className="min-w-0 flex-1 truncate">{p.name}</span>
@@ -219,12 +234,12 @@ export function Hud() {
       </div>
 
       {/* Mini-map */}
-      <div className="absolute bottom-4 left-4">
-        <MiniMap trackId={room.trackId} />
+      <div className={compact ? "absolute top-[5.25rem] opacity-90" : "absolute bottom-4 left-4"} style={compact ? { left: "max(0.75rem, env(safe-area-inset-left))" } : undefined}>
+        <MiniMap trackId={room.trackId} small={compact} />
       </div>
 
       {/* Speed and drift charge */}
-      {!spectating && !me?.finished && (
+      {!compact && !spectating && !me?.finished && (
         <div className="absolute bottom-4 right-4 w-52 text-right">
           <div className={`mb-1 h-6 text-sm font-black uppercase tracking-widest ${hud.boosting ? "text-orange-300" : "text-teal-200"}`}>{hud.boosting ? "Boost!" : hud.offroad ? "Off the track" : ""}</div>
           <div className="text-outline text-6xl font-black tabular-nums leading-none">
@@ -238,7 +253,7 @@ export function Hud() {
         </div>
       )}
 
-      {room.phase === "countdown" && !spectating && (
+      {room.phase === "countdown" && !spectating && !compact && (
         <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 flex-wrap justify-center gap-x-4 gap-y-1 rounded-2xl bg-slate-900/65 px-4 py-2 text-xs text-white/90">
           {CONTROLS.map(([key, what]) => (
             <span key={key}>
@@ -250,7 +265,7 @@ export function Hud() {
 
       {me?.finished && room.phase === "racing" && (
         <div className="absolute inset-x-0 top-1/3 text-center">
-          <div className="animate-pop text-outline text-7xl font-black text-emerald-300">FINISHED!</div>
+          <div className="animate-pop text-outline text-4xl font-black text-emerald-300 tall:text-7xl">FINISHED!</div>
           <div className="text-outline mt-2 text-3xl font-black">
             {ordinal(me.place)} place · {formatRaceTime(me.finishMs)}
           </div>
@@ -265,6 +280,16 @@ export function Hud() {
       )}
 
       {(room.phase === "countdown" || room.phase === "racing") && <Countdown startAt={room.raceStartAt} />}
+      {compact && !spectating && me && !me.finished && <TouchControls item={me.item} charges={me.charges} drift={hud.driftCharge} level={hud.driftLevel} />}
+      {compact && (
+        <div className="absolute inset-0 hidden items-center justify-center bg-slate-950/85 text-center portrait:flex">
+          <div>
+            <div className="mx-auto mb-3 h-14 w-9 animate-pulse rounded-lg border-4 border-white/80" style={{ transform: "rotate(90deg)" }} />
+            <div className="text-xl font-black">Turn your phone sideways</div>
+            <div className="mt-1 text-sm text-white/60">Office Kart races in landscape.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

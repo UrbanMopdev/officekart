@@ -9,6 +9,7 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
   const setName = useStore((s) => s.setName);
   const status = useStore((s) => s.status);
   const error = useStore((s) => s.error);
+  const touchUi = useStore((s) => s.touch);
   const [code, setCode] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const busy = status === "connecting";
@@ -48,13 +49,13 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
   const shown = localError ?? error;
 
   return (
-    <div className="menu-bg flex h-full items-center justify-center overflow-y-auto p-4">
-      <div className="w-full max-w-md animate-rise">
-        <div className="mb-6 text-center">
-          <div className="inline-block -rotate-2 rounded-2xl bg-amber-400 px-5 py-2 text-5xl font-black tracking-tight text-slate-900 shadow-[0_8px_0_#b45309]">
+    <div className="menu-bg flex h-full overflow-y-auto p-4">
+      <div className="m-auto w-full max-w-md animate-rise">
+        <div className="mb-3 text-center tall:mb-6">
+          <div className="inline-block -rotate-2 rounded-2xl bg-amber-400 px-5 py-2 text-3xl font-black tracking-tight tall:text-5xl text-slate-900 shadow-[0_8px_0_#b45309]">
             OFFICE <span className="text-indigo-700">KART</span>
           </div>
-          <p className="mt-5 text-indigo-100">Race your coworkers around the office. Up to 12 karts per lobby.</p>
+          <p className="mt-3 text-sm text-indigo-100 tall:mt-5 tall:text-base">Race your coworkers around the office. Up to 12 karts per lobby.</p>
         </div>
 
         <Panel>
@@ -66,7 +67,7 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
                 onChange={(e) => setName(e.target.value)}
                 maxLength={NAME_MAX_LENGTH}
                 placeholder="e.g. Speedy Sam"
-                autoFocus
+                autoFocus={!touchUi}
                 autoComplete="nickname"
                 className="w-full rounded-2xl border-2 border-white/20 bg-white/10 px-4 py-3 text-lg font-bold text-white placeholder:text-white/35 focus:border-amber-400 focus:outline-none"
               />
@@ -120,7 +121,8 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
           </form>
         </Panel>
 
-        <div className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-indigo-200">
+        {touchUi && <p className="mt-5 text-center text-xs text-indigo-200">Touch controls appear when the race starts. Hold your phone sideways.</p>}
+        <div className={`mt-5 flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-indigo-200 ${touchUi ? "hidden" : "flex"}`}>
           {CONTROLS.map(([key, what]) => (
             <span key={key}>
               <Kbd>{key}</Kbd> {what}

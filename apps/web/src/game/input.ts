@@ -2,6 +2,20 @@
 import { INPUT_BITS } from "@office-kart/shared";
 
 const down = new Set<string>();
+
+/** State of the on-screen controls, written by the touch overlay. */
+export const touch = {
+  /** A finger is on the steering pad; `steer` is its analogue value, -1..1. */
+  steering: false,
+  steer: 0,
+  gas: false,
+  brake: false,
+  drift: false,
+  use: false,
+  reset: false,
+  /** Accelerate without holding anything (the default on phones). */
+  autoGas: false,
+};
 let resetQueued = false;
 let steer = 0;
 let enabled = false;
@@ -33,13 +47,23 @@ export function setInputEnabled(on: boolean): void {
 /** Returns [inputBits, steer] for this tick. */
 export function sampleInput(): [number, number] {
   let bits = 0;
-  if (down.has("KeyW") || down.has("ArrowUp")) bits |= INPUT_BITS.ACCEL;
-  if (down.has("KeyS") || down.has("ArrowDown")) bits |= INPUT_BITS.BRAKE;
-  if (down.has("Space")) bits |= INPUT_BITS.DRIFT;
+  if (down.has("KeyW") || down.has("ArrowUp") || touch.gas || (touch.autoGas && !touch.brake)) bits |= INPUT_BITS.ACCEL;
+  if (down.has("KeyS") || down.has("ArrowDown") || touch.brake) bits |= INPUT_BITS.BRAKE;
+  if (down.has("Space") || touch.drift) bits |= INPUT_BITS.DRIFT;
+  if (touch.use) bits |= INPUT_BITS.USE;
+  if (touch.reset) {
+    resetQueued = true;
+    touch.reset = false;
+  }
   if (down.has("ShiftLeft") || down.has("ShiftRight") || down.has("KeyE")) bits |= INPUT_BITS.USE;
   if (resetQueued) {
     bits |= INPUT_BITS.RESET;
     resetQueued = false;
+  }
+  if (touch.steering) {
+    // The steering pad is already analogue: use it as it is.
+    steer = Math.round(Math.max(-1, Math.min(1, touch.steer)) * 100) / 100;
+    return [bits, steer];
   }
   const left = down.has("KeyA") || down.has("ArrowLeft");
   const right = down.has("KeyD") || down.has("ArrowRight");

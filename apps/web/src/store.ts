@@ -21,10 +21,12 @@ export interface Settings {
   shake: boolean;
   /** Fewer particles and no screen effects. */
   reducedFx: boolean;
+  /** Touch controls: accelerate automatically. */
+  autoGas: boolean;
 }
 
 const SETTINGS_KEY = "office-kart:settings";
-const DEFAULT_SETTINGS: Settings = { master: 0.8, music: 0.6, sfx: 0.9, shake: true, reducedFx: false };
+const DEFAULT_SETTINGS: Settings = { master: 0.8, music: 0.6, sfx: 0.9, shake: true, reducedFx: false, autoGas: true };
 
 function loadSettings(): Settings {
   try {
@@ -34,7 +36,12 @@ function loadSettings(): Settings {
   }
 }
 
+/** True on phones and tablets, where the main way to point is a finger. */
+export const IS_TOUCH = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
+
 interface Store {
+  /** Show on-screen controls and the compact layout. */
+  touch: boolean;
   settings: Settings;
   setSettings(patch: Partial<Settings>): void;
   /** Camera is below the water line. */
@@ -81,6 +88,8 @@ function loadName(): string {
 /** Start on a level the machine can hold, judged from its graphics chip. */
 function detectQuality(): Quality {
   try {
+    // Phones and tablets start light; it can be raised in the lobby.
+    if (IS_TOUCH) return "low";
     const gl = document.createElement("canvas").getContext("webgl2");
     if (!gl) return "low";
     const ext = gl.getExtension("WEBGL_debug_renderer_info");
@@ -97,6 +106,7 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useStore = create<Store>((set) => ({
   name: loadName(),
+  touch: IS_TOUCH,
   settings: loadSettings(),
   setSettings(patch) {
     set((s) => {

@@ -12,6 +12,7 @@ export function Lobby() {
   const quality = useStore((s) => s.quality);
   const setQuality = useStore((s) => s.setQuality);
   const settings = useStore((s) => s.settings);
+  const touchUi = useStore((s) => s.touch);
   const setSettings = useStore((s) => s.setSettings);
   const isHost = room.hostId === myId;
   const link = `${location.origin}/r/${room.code}`;
@@ -21,6 +22,15 @@ export function Lobby() {
   const taken = new Set(room.players.filter((p) => p.id !== myId).map((p) => p.color));
 
   const copy = async () => {
+    // On phones, open the share sheet (Messages, Slack, AirDrop...) instead of copying.
+    if (touchUi && navigator.share) {
+      try {
+        await navigator.share({ title: "Office Kart", text: "Race me in Office Kart", url: link });
+        return;
+      } catch {
+        /* cancelled: fall through to copying */
+      }
+    }
     try {
       await navigator.clipboard.writeText(link);
       setCopied("copied");
@@ -30,8 +40,25 @@ export function Lobby() {
     }
   };
 
+  const actions = (
+    <div className="flex gap-3">
+      <Button variant="danger" onClick={() => net.leave()}>
+        Leave
+      </Button>
+      {isHost ? (
+        <Button className="flex-1 text-lg" disabled={waiting > 0} onClick={() => net.send(MSG.START)}>
+          {waiting > 0 ? `Waiting for ${waiting} to ready up` : "Start race"}
+        </Button>
+      ) : (
+        <Button className="flex-1 text-lg" variant={me?.ready ? "ghost" : "primary"} onClick={() => net.send(MSG.READY, !me?.ready)}>
+          {me?.ready ? "Ready! (click to cancel)" : "I'm ready"}
+        </Button>
+      )}
+    </div>
+  );
+
   return (
-    <div className="absolute inset-0 overflow-y-auto bg-slate-950/45 p-4">
+    <div className={`absolute inset-0 overflow-y-auto bg-slate-950/45 p-4 ${touchUi ? "pb-28" : ""}`}>
       <div className="mx-auto grid max-w-4xl animate-rise gap-4 md:grid-cols-[1.15fr_1fr]">
         <Panel className="md:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -41,7 +68,7 @@ export function Lobby() {
             </div>
             <div className="flex flex-col items-end gap-2">
               <Button variant="secondary" onClick={copy}>
-                {copied === "copied" ? "Link copied!" : "Copy invite link"}
+                {copied === "copied" ? "Link copied!" : touchUi ? "Share invite link" : "Copy invite link"}
               </Button>
               {copied === "manual" ? (
                 <input readOnly value={link} onFocus={(e) => e.target.select()} className="w-72 rounded-lg bg-white/10 px-2 py-1 font-mono text-xs text-white" />
@@ -219,6 +246,11 @@ export function Lobby() {
                   <input type="range" min={0} max={1} step={0.05} value={settings[k]} onChange={(e) => setSettings({ [k]: Number(e.target.value) })} className="flex-1 accent-amber-400" aria-label={`${k} volume`} />
                 </label>
               ))}
+              {touchUi && (
+                <label className="flex items-center gap-2 text-white/80">
+                  <input type="checkbox" checked={settings.autoGas} onChange={(e) => setSettings({ autoGas: e.target.checked })} className="accent-amber-400" /> Accelerate automatically
+                </label>
+              )}
               <label className="flex items-center gap-2 text-white/80">
                 <input type="checkbox" checked={settings.shake} onChange={(e) => setSettings({ shake: e.target.checked })} className="accent-amber-400" /> Camera shake
               </label>
@@ -228,22 +260,15 @@ export function Lobby() {
             </div>
           </Panel>
 
-          <div className="flex gap-3">
-            <Button variant="danger" onClick={() => net.leave()}>
-              Leave
-            </Button>
-            {isHost ? (
-              <Button className="flex-1 text-lg" disabled={waiting > 0} onClick={() => net.send(MSG.START)}>
-                {waiting > 0 ? `Waiting for ${waiting} to ready up` : "Start race"}
-              </Button>
-            ) : (
-              <Button className="flex-1 text-lg" variant={me?.ready ? "ghost" : "primary"} onClick={() => net.send(MSG.READY, !me?.ready)}>
-                {me?.ready ? "Ready! (click to cancel)" : "I'm ready"}
-              </Button>
-            )}
-          </div>
+          {!touchUi && actions}
         </div>
       </div>
+      {touchUi && (
+        // On a phone the lobby is a long scroll, so Start / Ready stays pinned to the bottom.
+        <div className="fixed inset-x-0 bottom-0 z-10 bg-slate-950/85 px-4 pt-3 backdrop-blur" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+          <div className="mx-auto max-w-4xl">{actions}</div>
+        </div>
+      )}
     </div>
   );
 }
