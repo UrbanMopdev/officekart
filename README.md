@@ -105,65 +105,64 @@ computer-controlled racers.
 
 ## Deploy to Railway
 
+**Live deployment** (Railway project `office-kart`, auto-deploys from `main`):
+
+- Game: https://web-production-90b775f2.up.railway.app
+- Game server health: https://game-server-production-bd421912.up.railway.app/health
+
 Two services from this one repository. Both build from a Dockerfile with the **repository root** as the
 build context, because each needs `packages/shared`.
 
-### 1. Push the code to GitHub
+### How the project is set up
 
-Create an empty GitHub repository and push this project to its `main` branch.
+Both services are connected to this GitHub repository on the `main` branch, with *Root Directory* left
+empty. Their build and deploy settings are set directly on each service in Railway:
 
-### 2. Create the game server service
+| Setting | `game-server` | `web` |
+|---|---|---|
+| Dockerfile path | `apps/game-server/Dockerfile` | `apps/web/Dockerfile` |
+| Healthcheck path | `/health` | `/healthz` |
+| Healthcheck timeout | 60 s | 60 s |
+| Restart policy | On failure, 10 retries | On failure, 10 retries |
+| Public domain target port | 2567 | 8080 |
+| Serverless (app sleeping) | Off. A sleeping server drops every race. | default |
+| Watch paths | `apps/game-server/**`, `packages/shared/**`, root `package*.json`, `tsconfig.base.json` | `apps/web/**`, `packages/shared/**`, root `package*.json`, `tsconfig.base.json` |
 
-1. In Railway: **New Project → Deploy from GitHub repo** and pick the repository.
-2. Rename the service to `game-server` (the variable references below use this name).
-3. **Settings → Source**: leave *Root Directory* empty.
-4. **Settings → Config-as-code**: set the file path to `/apps/game-server/railway.json`.
-   This selects the Dockerfile, the `/health` check, one replica and the restart policy.
-5. **Variables**:
+Variables:
 
-   | Variable | Value |
-   |---|---|
-   | `NODE_ENV` | `production` |
-   | `PORT` | `2567` |
-   | `ALLOWED_ORIGINS` | `https://${{web.RAILWAY_PUBLIC_DOMAIN}}` |
-
-6. **Settings → Networking → Generate Domain**, target port `2567`.
-7. Make sure **Serverless** (app sleeping) is **off** for this service. A sleeping server drops every race.
-8. Pick a region close to your players.
-
-### 3. Create the web service
-
-1. In the same project: **New → GitHub Repo**, same repository. Rename the service to `web`.
-2. **Settings → Source**: leave *Root Directory* empty.
-3. **Settings → Config-as-code**: `/apps/web/railway.json`.
-4. **Variables**:
-
-   | Variable | Value |
-   |---|---|
-   | `PORT` | `8080` |
-   | `VITE_GAME_SERVER_URL` | `wss://${{game-server.RAILWAY_PUBLIC_DOMAIN}}` |
-   | `VITE_API_URL` | `https://${{game-server.RAILWAY_PUBLIC_DOMAIN}}` |
-
-5. **Settings → Networking → Generate Domain**, target port `8080`.
+| Service | Variable | Value |
+|---|---|---|
+| game-server | `NODE_ENV` | `production` |
+| game-server | `PORT` | `2567` |
+| game-server | `ALLOWED_ORIGINS` | `https://${{web.RAILWAY_PUBLIC_DOMAIN}}` |
+| web | `PORT` | `8080` |
+| web | `VITE_GAME_SERVER_URL` | `wss://${{game-server.RAILWAY_PUBLIC_DOMAIN}}` |
+| web | `VITE_API_URL` | `https://${{game-server.RAILWAY_PUBLIC_DOMAIN}}` |
 
 `VITE_*` values are baked into the browser bundle when the image is built, so they must only ever hold
-public URLs. Never put a database URL or a secret in a `VITE_` variable.
+public URLs. Never put a database URL or a secret in a `VITE_` variable. The web build fails on purpose
+if `VITE_GAME_SERVER_URL` is empty.
 
-### 4. Redeploy once
+The `railway.json` files under `apps/` record the same settings for reference. Railway only reads a
+config file from a service's root directory, so with the root left at the repository root they are not
+applied automatically.
 
-The two services reference each other's public domain, and those domains only exist after step 2.6 and
-3.5. Redeploy **both** services once so `ALLOWED_ORIGINS` and `VITE_GAME_SERVER_URL` pick up real values.
-(The web build fails on purpose if `VITE_GAME_SERVER_URL` is empty.)
+### Recreating it from scratch
 
-### 5. Check it
+1. Create a Railway project and two empty services named `game-server` and `web`.
+2. Apply the settings and variables from the tables above to each service.
+3. Generate a public domain for each service with the target port shown.
+4. Connect each service to the GitHub repository, branch `main`. The first build starts immediately.
+5. Pick a region close to your players (service Settings, Regions).
 
-1. `https://<game-server-domain>/health` returns `{"status":"ok", ...}`.
-2. Open `https://<web-domain>`, create a lobby, and open the invite link on a second computer on a
-   different network.
+### Check it
+
+1. The health URL returns `{"status":"ok", ...}`.
+2. Open the game, create a lobby, and open the invite link on a second computer on a different network.
 3. Run the race test and the load test against the deployed server (commands above).
 
-From here, every push to `main` redeploys automatically. Each service only rebuilds when its own files or
-`packages/shared` change (`watchPatterns` in its `railway.json`).
+Every push to `main` redeploys automatically. Each service only rebuilds when files matching its watch
+paths change. Deploying the game server ends any race in progress, so deploy between games.
 
 ### PostgreSQL
 
