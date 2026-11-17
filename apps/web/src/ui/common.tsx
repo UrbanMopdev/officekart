@@ -30,7 +30,7 @@ export const CONTROLS: [string, string][] = [
   ["W / ↑", "Accelerate"],
   ["S / ↓", "Brake / reverse"],
   ["A D / ← →", "Steer"],
-  ["Space", "Hold while steering to drift"],
+  ["Space", "Hold while steering to drift · tap in mid-air for a trick"],
   ["Shift", "Use power-up"],
   ["R", "Reset kart"],
 ];

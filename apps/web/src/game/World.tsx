@@ -63,7 +63,7 @@ export function World({ quality }: { quality: Quality }) {
   const fillA = useRef<THREE.PointLight>(null);
   const fillB = useRef<THREE.PointLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
-  const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean; hint: number }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, hint: 0 });
+  const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false });
   const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0 });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
@@ -374,11 +374,10 @@ export function World({ quality }: { quality: Quality }) {
           if (!g.visual) {
             g.visual = new KartVisual();
             g.visual.setLook({ shadows: false, underglow: false });
-            g.visual.setIdentity("Your best", me?.color ?? 0, true);
             group.add(g.visual.group);
           }
-          locate(track, probe.x, probe.z, g.hint, loc);
-          g.hint = loc.idx;
+          // Its name tag would fill the screen when it is right beside the camera.
+          g.visual.setIdentity("Your best", me?.color ?? 0, gdx * gdx + gdz * gdz > 110);
           g.visual.update(probe.x, probe.y, probe.z, probe.heading, probe.speed, 0, 0, 0, dt, time, FX.PHANTOM);
         }
       }

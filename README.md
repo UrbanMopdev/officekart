@@ -65,6 +65,25 @@ for master, music and effects are in the lobby.
 **After the race.** Awards from tracked stats, session points and wins, head-to-head streak messages,
 personal bests (per browser), a vote for the next race, and a spectator camera with left/right to switch.
 
+**Speed classes.** The host picks Cruise, Fast, Turbo or Ludicrous in the lobby (1x, 1.2x, 1.4x and
+1.65x top speed, acceleration and boosts). Steering does not scale, so each step up makes corners
+tighter. New lobbies start on Fast with chaos set to Chaotic. The class is part of the shared
+simulation, so the server stays authoritative and prediction matches.
+
+**Skill moves.** All three are decided by the server.
+- *Rocket start*: press the accelerator in the last second before the lights go green (the last
+  half second is a perfect start). Pressing earlier gives nothing. The server times the press itself.
+- *Jump tricks*: tap drift in mid-air; the kart rolls and lands with a boost.
+- *Slipstream*: sit 3 to 17 m behind another kart for about 1.3 s and get slung past it.
+
+**Feel.** The view widens and the camera closes in with speed, speed lines streak in from the screen
+edges, hard landings and hits thump the camera, and call-outs mark rocket starts, tricks, big drift
+turbos, slipstreams, overtakes and the final lap.
+
+**Ghost.** Racing alone, a see-through copy of your own best run on that track, lap count and speed
+class drives with you. It is your own recorded driving, stored in the browser. It is not a
+computer-controlled racer and nobody else sees it.
+
 ### Not built, or simplified
 
 - Split paths, alternate routes and hidden shortcuts. Every track has one racing line, so there is no
@@ -72,7 +91,7 @@ personal bests (per browser), a vote for the next race, and a spectator camera w
 - Elevators, portals and teleport gates, rotating road sections, and tracks that cross over themselves.
 - Platforms do not carry karts; a platform is a bridge that slides sideways over a gap.
 - Two of the nine chaos events (Lava Surge, Portal Madness), which need routes that open and close.
-- Speed lines, confetti, finish-line camera and celebration animations.
+- Confetti, finish-line camera and celebration animations.
 - Rivalries and standings last for a lobby session only. There is still no database.
 - Three layouts are reused: Deep Sea Disaster mirrors Proving Grounds, Frozen Frenzy mirrors the Neon
   layout, and Neon Cyber City and Office Apocalypse keep their Phase 1 layouts.
@@ -83,6 +102,8 @@ personal bests (per browser), a vote for the next race, and a spectator camera w
 npm run test:track                                   # geometry of every track
 npm run test:physics -w @office-kart/game-server      # a full lap of every track, jumps, falls, water
 npm run test:race                                    # 29 network checks
+npm run test:speed -w @office-kart/game-server        # every track lapped at every speed class
+npm run test:fun -w @office-kart/game-server          # tricks, rocket starts, slipstream, speed classes
 CHAOS_EVENTS=on CHAOS=2 TRACK=chaos-dimension LAPS=1 npm run test:load   # 12 clients, items, mayhem
 ```
 
