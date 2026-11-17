@@ -5,8 +5,8 @@ export const TICK_RATE = 30;
 export const DT = 1 / TICK_RATE;
 export const TICK_MS = 1000 / TICK_RATE;
 
-/** Kart snapshots are sent every N simulation ticks (30 / 2 = 15 Hz). */
-export const SNAPSHOT_EVERY = 2;
+/** Kart snapshots are sent every N simulation ticks. 1 = every tick (30 Hz), for the smoothest motion. */
+export const SNAPSHOT_EVERY = 1;
 
 export const ROOM_NAME = "race";
 export const MAX_PLAYERS = 12;

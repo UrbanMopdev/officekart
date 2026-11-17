@@ -25,8 +25,8 @@ import { sampleInput, setInputEnabled } from "../game/input";
 import { useStore } from "../store";
 
 /** Remote karts are drawn this far in the past so there are always two snapshots to blend. */
-const INTERP_MS = 110;
-const MAX_EXTRAPOLATE_S = 0.2;
+const INTERP_MS = 70;
+const MAX_EXTRAPOLATE_S = 0.15;
 const SESSION_KEY = "office-kart:session";
 const CLOSE_CONSENTED = 4000;
 const CLOSE_KICKED = 4003;
@@ -137,6 +137,8 @@ class Net {
   private leaving = false;
   private reconnecting = false;
   private previewStart = 0;
+  /** How far the current frame is between two simulation ticks, 0..1. */
+  private alpha = 0;
   /** Things on the track from the latest snapshot: [id, type, x, y, z, aux] each. */
   entities: number[] = [];
   /** Item boxes that are currently empty. */
@@ -420,7 +422,8 @@ class Net {
       this.acc = 0;
     }
     this.predictor.decay(dt);
-    return this.acc / DT;
+    this.alpha = this.acc / DT;
+    return this.alpha;
   }
 
   /** Race tick as the server counts it, estimated from the clock. */
@@ -431,8 +434,9 @@ class Net {
   }
 
   /** The time hazards are drawn at. While driving it is our own kart's clock, so what you see is what can hit you. */
-  hazardClock(alpha: number): number {
-    const tick = this.isDriving() ? this.predictor.state.tick + alpha : this.raceTick();
+  hazardClock(): number {
+    // The kart on screen sits between its previous and current tick, so hazards do too.
+    const tick = this.isDriving() ? this.predictor.state.tick - 1 + this.alpha : this.raceTick();
     return hazardTime(tick, this.predictor.ctx);
   }
 

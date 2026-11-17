@@ -78,6 +78,21 @@ function loadName(): string {
   }
 }
 
+/** Start on a level the machine can hold, judged from its graphics chip. */
+function detectQuality(): Quality {
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2");
+    if (!gl) return "low";
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : "";
+    if (/swiftshader|llvmpipe|software|mali|adreno|powervr/i.test(name)) return "low";
+    if (/intel|uhd|iris|hd graphics/i.test(name)) return "medium";
+    return "high";
+  } catch {
+    return "medium";
+  }
+}
+
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const useStore = create<Store>((set) => ({
@@ -103,7 +118,7 @@ export const useStore = create<Store>((set) => ({
   toast: null,
   pingMs: 0,
   hud: { speed: 0, driftCharge: 0, driftLevel: 0, boosting: false, offroad: false },
-  quality: loadQuality() ?? "high",
+  quality: loadQuality() ?? detectQuality(),
   qualityLocked: loadQuality() !== null,
   setQuality(quality, manual) {
     if (manual) {

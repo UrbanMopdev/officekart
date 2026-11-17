@@ -109,6 +109,14 @@ export function World({ quality }: { quality: Quality }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Two directions at right angles to the sunlight, for snapping the shadow map.
+  const basis = useMemo(() => {
+    const d = new THREE.Vector3(light.dir[0], light.dir[1], light.dir[2]).normalize();
+    const r = new THREE.Vector3(0, 1, 0).cross(d).normalize();
+    const u = d.clone().cross(r).normalize();
+    return { rx: r.x, rz: r.z, ux: u.x, uy: u.y, uz: u.z };
+  }, [light]);
+
   const centre = useMemo(() => {
     let x = 0;
     let z = 0;
@@ -391,8 +399,17 @@ export function World({ quality }: { quality: Quality }) {
         sc.updateProjectionMatrix();
       }
       const lookY = haveFocus ? focus.y : track.maxY * 0.4;
-      sun.target.position.set(lookX, lookY, lookZ);
-      sun.position.set(lookX + light.dir[0] * 260, lookY + light.dir[1] * 260, lookZ + light.dir[2] * 260);
+      // Move the light in whole shadow-map texels, so shadow edges do not shimmer as it follows the kart.
+      const texel = (160 * range) / (quality === "high" ? 2048 : 1024);
+      const along = lookX * basis.rx + lookZ * basis.rz;
+      const up = lookX * basis.ux + lookY * basis.uy + lookZ * basis.uz;
+      const sa = Math.round(along / texel) * texel - along;
+      const su = Math.round(up / texel) * texel - up;
+      const tx = lookX + basis.rx * sa + basis.ux * su;
+      const ty = lookY + basis.uy * su;
+      const tz = lookZ + basis.rz * sa + basis.uz * su;
+      sun.target.position.set(tx, ty, tz);
+      sun.position.set(tx + light.dir[0] * 260, ty + light.dir[1] * 260, tz + light.dir[2] * 260);
       sun.target.updateMatrixWorld();
     }
     if (fillA.current && fillB.current) {

@@ -102,7 +102,19 @@ function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): { ro
   const heightAt = (x: number, z: number): number => {
     let best = 0;
     let bestD = Infinity;
-    for (let i = 0; i < track.n; i += 2) {
+    // Coarse pass over every eighth sample, then refine around the winner.
+    for (let i = 0; i < track.n; i += 8) {
+      const dx = x - track.px[i];
+      const dz = z - track.pz[i];
+      const d = dx * dx + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    const coarse = best;
+    for (let o = -8; o <= 8; o++) {
+      const i = (coarse + o + track.n) % track.n;
       const dx = x - track.px[i];
       const dz = z - track.pz[i];
       const d = dx * dx + dz * dz;

@@ -79,6 +79,8 @@ export interface KartState {
   /** Size change: sizeK is -1 mini, 1 giant, for sizeT more seconds. */
   sizeT: number;
   sizeK: number;
+  /** Ticks since the wheels left the ground. */
+  airT: number;
   water: boolean;
 }
 
@@ -97,7 +99,7 @@ export function decodeInput(bits: number, steer: number, out: KartInput): KartIn
   return out;
 }
 
-const NUMERIC: (keyof KartState)[] = ["x", "z", "heading", "vAngle", "speed", "driftDir", "driftCharge", "boost", "idx", "pos", "y", "vy", "surf", "safe", "tick", "spin", "immune", "shield", "phantom", "slow", "reverse", "emp", "sizeT", "sizeK"];
+const NUMERIC: (keyof KartState)[] = ["x", "z", "heading", "vAngle", "speed", "driftDir", "driftCharge", "boost", "idx", "pos", "y", "vy", "surf", "safe", "tick", "spin", "immune", "shield", "phantom", "slow", "reverse", "emp", "sizeT", "sizeK", "airT"];
 const FLAGS: (keyof KartState)[] = ["offroad", "air", "water"];
 /** Numbers in the wire format of one kart state. */
 export const STATE_SIZE = NUMERIC.length + FLAGS.length;
@@ -214,6 +216,7 @@ export function respawnKart(s: KartState, track: Track, i: number): void {
   s.y = track.hy[i];
   s.vy = 0;
   s.air = false;
+  s.airT = 0;
   s.surf = 0;
   s.safe = i;
   s.spin = 0;
@@ -255,7 +258,9 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
 
   if (s.emp > 0) s.boost = 0;
   const boosting = s.boost > 0;
-  const grounded = !s.air;
+  // A kart that has only just left the ground (a bump, a crest) still drives normally,
+  // so small hops never cut the throttle or the steering.
+  const grounded = !s.air || s.airT < 4;
   const surface = SURFACE_PHYSICS[grounded ? s.surf : 0];
   let maxSpeed: number = KART.maxSpeed;
   if (boosting) maxSpeed += KART.boostExtraSpeed;
@@ -399,7 +404,7 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   const gy = groundHeight(track, i, loc.along, lateral, time);
   if (!s.air) {
     const ballistic = s.y + s.vy * dt - 0.5 * g * dt * dt;
-    if (gy === -Infinity || ballistic > gy + 0.06) {
+    if (gy === -Infinity || ballistic > gy + 0.1) {
       s.air = true;
       s.y = ballistic;
       s.vy -= g * dt;
@@ -418,9 +423,10 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
       s.y = gy;
       s.air = false;
       s.vy = track.slope[i] * s.speed * (Math.sin(s.vAngle) * track.tx[i] + Math.cos(s.vAngle) * track.tz[i]);
-      if (s.driftDir !== 0) s.driftCharge = Math.min(s.driftCharge, KART.driftLevels[0]);
+      if (s.driftDir !== 0 && s.airT > 6) s.driftCharge = Math.min(s.driftCharge, KART.driftLevels[0]);
     }
   }
+  s.airT = s.air ? s.airT + 1 : 0;
   // Fell into a gap or off an open edge: back to the last safe spot, stationary.
   if (s.y < track.hy[i] - 28 || s.y < track.minY - 40) {
     respawnKart(s, track, track.unsafe[s.safe] ? track.respawnAt[s.safe] : s.safe);

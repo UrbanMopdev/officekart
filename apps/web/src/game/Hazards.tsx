@@ -198,7 +198,7 @@ export function Hazards({ track }: { track: Track }) {
   useEffect(() => () => disposeTree(built.root), [built]);
 
   useFrame((state) => {
-    const t = net.hazardClock(0);
+    const t = net.hazardClock();
     const now = state.clock.elapsedTime;
     const blink = Math.sin(now * 22) > 0;
     for (const it of built.items) {
@@ -256,7 +256,11 @@ export function Hazards({ track }: { track: Track }) {
       m.visible = true;
       m.geometry = built.geos[type] ?? built.geos[ENTITY.ORB];
       m.material = built.mats[type] ?? built.mats[ENTITY.ORB];
-      m.position.set(e[o + 2], e[o + 3] + (type === ENTITY.METEOR ? 0.25 : type === ENTITY.SLIME ? 0.3 : 0.9), e[o + 4]);
+      const ty = e[o + 3] + (type === ENTITY.METEOR ? 0.25 : type === ENTITY.SLIME ? 0.3 : 0.9);
+      // Glide toward the latest reported position instead of jumping to it.
+      if (m.userData.id === e[o]) m.position.lerp(v3.set(e[o + 2], ty, e[o + 4]), 0.45);
+      else m.position.set(e[o + 2], ty, e[o + 4]);
+      m.userData.id = e[o];
       m.scale.setScalar(type === ENTITY.BLAST ? e[o + 5] * (0.6 + ((now * 4) % 1) * 0.5) : 1);
       m.rotation.set(type === ENTITY.ROCKET ? Math.PI / 2 : 0, type === ENTITY.TORNADO || type === ENTITY.DECOY ? now * 9 : 0, 0);
       if (type === ENTITY.METEOR) m.visible = blink || e[o + 5] > 20;
