@@ -13,6 +13,8 @@ export const MSG = {
   PING: "p",
   /** server -> client: [clientTimeMs, serverTimeMs] */
   PONG: "q",
+  /** client -> server during the countdown: true/false as the accelerator goes down/up (rocket starts) */
+  REV: "rev",
   READY: "ready",
   KART: "kart",
   SETTINGS: "settings",
@@ -72,6 +74,8 @@ export interface RoomView {
   raceNumber: number;
   players: PlayerView[];
   chaos: number;
+  /** Index into SPEED_CLASSES. */
+  speed: number;
   eventId: number;
   eventFrom: number;
   eventTo: number;

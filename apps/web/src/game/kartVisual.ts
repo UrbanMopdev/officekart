@@ -292,6 +292,7 @@ export class KartVisual {
   wasAir = false;
   private sizeNow = 1;
   private spinAngle = 0;
+  private trickAngle = 0;
   private ghost = false;
   private readonly bubble: THREE.Mesh;
   private tiltX = 0;
@@ -306,6 +307,8 @@ export class KartVisual {
     this.sizeNow += (size - this.sizeNow) * (1 - Math.exp(-dt * 8));
     this.group.scale.setScalar(this.sizeNow);
     this.spinAngle = fx & FX.SPIN ? this.spinAngle + dt * 15 : 0;
+    // A jump trick is one quick barrel roll.
+    this.trickAngle = fx & FX.TRICK ? Math.min(Math.PI * 2, this.trickAngle + dt * 13) : 0;
     this.bubble.visible = (fx & FX.SHIELD) !== 0;
     const ghost = (fx & FX.PHANTOM) !== 0;
     if (ghost !== this.ghost) {
@@ -358,7 +361,7 @@ export class KartVisual {
     this.slide += (-drift * 0.42 - this.slide) * k;
     this.roll += (this.steer * grip * 0.075 + this.slide * 0.22 - this.roll) * k;
     this.pitch += (Math.max(-0.05, Math.min(0.05, -accel * 0.0022)) - this.pitch) * k;
-    this.body.rotation.set(this.pitch, this.slide + this.spinAngle, this.roll);
+    this.body.rotation.set(this.pitch, this.slide + this.spinAngle, this.roll + this.trickAngle);
     const rumble = Math.abs(speed) > 1 ? Math.sin(time * 47 + x) * 0.006 * Math.min(1, Math.abs(speed) / 20) : 0;
     this.body.position.y = Math.sin(this.hop * Math.PI) * 0.6 + rumble + (boosting ? Math.sin(time * 70) * 0.012 : 0);
 

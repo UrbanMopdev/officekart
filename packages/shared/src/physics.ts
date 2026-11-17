@@ -12,7 +12,7 @@
  * functions of the kart's own tick counter, which travels with its state, so
  * the client's prediction and the server always agree.
  */
-import { DT, EVENT, GRAVITY, KART, KART_RADIUS, SLOPE_PULL, SURFACE_PHYSICS } from "./constants";
+import { DT, EVENT, GRAVITY, KART, KART_RADIUS, SLOPE_PULL, SURFACE_PHYSICS, TRICK } from "./constants";
 import { groundHeight, hazardPose, locate, onBoostPad, surfaceAt, type HazardPose, type Located, type Track } from "./track";
 
 export interface KartInput {
@@ -34,9 +34,11 @@ export interface RaceCtx {
   to: number;
   /** Extra seconds of hazard time accumulated by past Obstacle Frenzy events. */
   hzOff: number;
+  /** Speed class multiplier (see SPEED_CLASSES). */
+  speed: number;
 }
 
-export const NO_CTX: RaceCtx = { event: 0, from: 0, to: 0, hzOff: 0 };
+export const NO_CTX: RaceCtx = { event: 0, from: 0, to: 0, hzOff: 0, speed: 1 };
 
 export interface KartState {
   x: number;
@@ -81,7 +83,11 @@ export interface KartState {
   sizeK: number;
   /** Ticks since the wheels left the ground. */
   airT: number;
+  /** 1 once a trick has been pulled on the current jump; pays out as a boost on landing. */
+  trick: number;
   water: boolean;
+  /** The drift button was down on the previous tick (tricks need a fresh press). */
+  dk: boolean;
 }
 
 export const INPUT_BITS = { ACCEL: 1, BRAKE: 2, DRIFT: 4, RESET: 8, USE: 16 } as const;
@@ -99,8 +105,8 @@ export function decodeInput(bits: number, steer: number, out: KartInput): KartIn
   return out;
 }
 
-const NUMERIC: (keyof KartState)[] = ["x", "z", "heading", "vAngle", "speed", "driftDir", "driftCharge", "boost", "idx", "pos", "y", "vy", "surf", "safe", "tick", "spin", "immune", "shield", "phantom", "slow", "reverse", "emp", "sizeT", "sizeK", "airT"];
-const FLAGS: (keyof KartState)[] = ["offroad", "air", "water"];
+const NUMERIC: (keyof KartState)[] = ["x", "z", "heading", "vAngle", "speed", "driftDir", "driftCharge", "boost", "idx", "pos", "y", "vy", "surf", "safe", "tick", "spin", "immune", "shield", "phantom", "slow", "reverse", "emp", "sizeT", "sizeK", "airT", "trick"];
+const FLAGS: (keyof KartState)[] = ["offroad", "air", "water", "dk"];
 /** Numbers in the wire format of one kart state. */
 export const STATE_SIZE = NUMERIC.length + FLAGS.length;
 
@@ -217,6 +223,7 @@ export function respawnKart(s: KartState, track: Track, i: number): void {
   s.vy = 0;
   s.air = false;
   s.airT = 0;
+  s.trick = 0;
   s.surf = 0;
   s.safe = i;
   s.spin = 0;
@@ -253,6 +260,9 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   const throttle = spinning ? 0 : input.throttle;
   const steer = spinning ? 0 : s.reverse > 0 ? -input.steer : input.steer;
   const driftKey = !spinning && input.drift;
+  const driftPress = driftKey && !s.dk;
+  s.dk = input.drift;
+  const k = ctx.speed;
   const giant = s.sizeT > 0 && s.sizeK > 0;
   const mini = s.sizeT > 0 && s.sizeK < 0;
 
@@ -262,8 +272,8 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   // so small hops never cut the throttle or the steering.
   const grounded = !s.air || s.airT < 4;
   const surface = SURFACE_PHYSICS[grounded ? s.surf : 0];
-  let maxSpeed: number = KART.maxSpeed;
-  if (boosting) maxSpeed += KART.boostExtraSpeed;
+  let maxSpeed: number = KART.maxSpeed * k;
+  if (boosting) maxSpeed += KART.boostExtraSpeed * k;
   if (s.offroad) maxSpeed *= boosting ? KART.offroadBoostSpeedMul : KART.offroadSpeedMul;
   else if (!boosting) maxSpeed *= surface.speed;
   if (s.water) maxSpeed *= 0.84;
@@ -286,10 +296,10 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
     // Acceleration never pushes past top speed; it only gets you there.
     if (s.speed < maxSpeed) {
       const fade = 1 - 0.55 * Math.min(1, Math.max(0, s.speed) / maxSpeed);
-      s.speed = Math.min(maxSpeed, s.speed + KART.accel * accelMul * fade * (boosting ? KART.boostAccelMul : 1) * dt);
+      s.speed = Math.min(maxSpeed, s.speed + KART.accel * k * accelMul * fade * (boosting ? KART.boostAccelMul : 1) * dt);
     }
   } else if (throttle < 0) {
-    if (s.speed > 0.5) s.speed -= KART.brake * dt;
+    if (s.speed > 0.5) s.speed -= KART.brake * k * dt;
     else s.speed -= KART.reverseAccel * dt;
   } else {
     const d = (spinning ? KART.drag * 2.5 : KART.drag) * dt;
@@ -297,9 +307,9 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
     else if (s.speed < -d) s.speed += d;
     else s.speed = 0;
   }
-  if (boosting && grounded && !spinning && s.speed < maxSpeed) s.speed = Math.min(maxSpeed, s.speed + KART.accel * dt); // boosts push even without throttle
+  if (boosting && grounded && !spinning && s.speed < maxSpeed) s.speed = Math.min(maxSpeed, s.speed + KART.accel * k * dt); // boosts push even without throttle
   // Over the limit (boost just ended, or drove off the road): bleed speed off gradually.
-  if (grounded && s.speed > maxSpeed) s.speed = Math.max(maxSpeed, s.speed - KART.overspeedDecel * dt);
+  if (grounded && s.speed > maxSpeed) s.speed = Math.max(maxSpeed, s.speed - KART.overspeedDecel * k * dt);
   if (s.speed < -KART.maxReverse) s.speed = -KART.maxReverse;
   if (boosting) s.boost = Math.max(0, s.boost - dt);
 
@@ -329,7 +339,7 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
     if (grounded) s.driftCharge += dt * (0.75 + 0.45 * Math.max(0, into));
     grip = KART.driftGrip * Math.max(0.35, gripMul);
   } else {
-    const damp = 1 - KART.turnSpeedDamp * Math.min(1, absSpeed / KART.maxSpeed);
+    const damp = 1 - KART.turnSpeedDamp * Math.min(1, absSpeed / (KART.maxSpeed * k));
     turn = steer * KART.turnRate * damp * turnMul;
     grip = KART.grip * gripMul;
   }
@@ -413,6 +423,8 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
       s.y = gy;
     }
   } else {
+    // A fresh press of drift in mid-air is a trick: it pays out as a boost on landing.
+    if (driftPress && !s.water && s.airT >= 3 && s.trick === 0) s.trick = 1;
     // Under water, holding drift swims upward a little.
     if (s.water && driftKey) s.vy = Math.min(7, s.vy + 34 * dt);
     s.vy -= g * dt;
@@ -424,6 +436,8 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
       s.air = false;
       s.vy = track.slope[i] * s.speed * (Math.sin(s.vAngle) * track.tx[i] + Math.cos(s.vAngle) * track.tz[i]);
       if (s.driftDir !== 0 && s.airT > 6) s.driftCharge = Math.min(s.driftCharge, KART.driftLevels[0]);
+      if (s.trick !== 0 && s.airT >= TRICK.minAirTicks && s.emp <= 0) s.boost = Math.max(s.boost, TRICK.boost);
+      s.trick = 0;
     }
   }
   s.airT = s.air ? s.airT + 1 : 0;

@@ -321,6 +321,17 @@ class AudioEngine {
         this.burst(0.5, 900, 0.3 * volume, "highpass");
         this.sweep(180, 720, 0.4, "sawtooth", 0.12 * volume);
         break;
+      case "trick":
+        this.chime([784, 1047, 1319], 0.055, "square", 0.11 * volume);
+        break;
+      case "rocket":
+        this.burst(0.7, 700, 0.34 * volume, "highpass");
+        this.sweep(140, 980, 0.55, "sawtooth", 0.15 * volume);
+        break;
+      case "draft":
+        this.burst(0.45, 1400, 0.24 * volume, "highpass");
+        this.sweep(420, 1100, 0.3, "triangle", 0.12 * volume);
+        break;
       case "jump":
         this.sweep(300, 760, 0.22, "triangle", 0.16 * volume);
         break;

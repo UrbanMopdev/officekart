@@ -13,12 +13,12 @@ const VOTES: [string, string][] = [
 ];
 
 /** Best time per track and lap count, kept in this browser. */
-function usePersonalBest(trackId: string, laps: number, finishMs: number): boolean {
+function usePersonalBest(trackId: string, laps: number, speed: number, finishMs: number): boolean {
   const [best, setBest] = useState(false);
   useEffect(() => {
     if (finishMs <= 0) return;
     try {
-      const key = `office-kart:best:${trackId}:${laps}`;
+      const key = `office-kart:best:${trackId}:${laps}:${speed}`;
       const prev = Number(localStorage.getItem(key)) || Infinity;
       if (finishMs < prev) {
         localStorage.setItem(key, String(finishMs));
@@ -27,7 +27,7 @@ function usePersonalBest(trackId: string, laps: number, finishMs: number): boole
     } catch {
       /* ignore */
     }
-  }, [trackId, laps, finishMs]);
+  }, [trackId, laps, speed, finishMs]);
   return best;
 }
 
@@ -40,7 +40,7 @@ export function Results() {
   const waitingRoom = room.players.filter((p) => !p.racing);
   const fastest = racers.reduce((best, p) => (p.bestLapMs > 0 && (best === 0 || p.bestLapMs < best) ? p.bestLapMs : best), 0);
   const hostName = room.players.find((p) => p.id === room.hostId)?.name ?? "the host";
-  const personalBest = usePersonalBest(room.trackId, room.laps, me?.finished ? me.finishMs : 0);
+  const personalBest = usePersonalBest(room.trackId, room.laps, room.speed, me?.finished ? me.finishMs : 0);
   const note = personalBest ? "New personal best!" : me?.note;
   const standings = [...room.players].sort((a, b) => b.points - a.points);
   const tally = (v: string) => room.players.filter((p) => p.vote === v).length;

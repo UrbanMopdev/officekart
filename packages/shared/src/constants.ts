@@ -72,6 +72,24 @@ export const KART = {
   boostPadSeconds: 1.1,
 } as const;
 
+/**
+ * Speed classes. `k` scales top speed, acceleration and boosts; steering does
+ * not scale, so every step up makes corners tighter and drifting matter more.
+ */
+export const SPEED_CLASSES = [
+  { name: "Cruise", tag: "Relaxed", k: 1 },
+  { name: "Fast", tag: "Standard", k: 1.2 },
+  { name: "Turbo", tag: "Hard", k: 1.4 },
+  { name: "Ludicrous", tag: "Expert", k: 1.65 },
+] as const;
+export const DEFAULT_SPEED_CLASS = 1;
+
+/** Jump tricks, slipstreaming and rocket starts. */
+export const TRICK = { minAirTicks: 9, boost: 0.9 } as const;
+export const DRAFT = { minDist: 3, maxDist: 17, halfWidth: 1.7, chargeTicks: 40, boost: 1.3 } as const;
+/** Rocket start: press accelerate this long before the lights go green (ms). Earlier than `early` stalls the engine. */
+export const ROCKET = { early: 1500, good: 1000, perfect: 450, late: 60, boost: [0, 0.9, 1.6], stall: 0.7 } as const;
+
 /** Snapshot flag bits for remote karts. */
 export const FLAG = {
   DRIFT_LEFT: 1,
@@ -106,7 +124,7 @@ export const SURFACE_PHYSICS = [
 ] as const;
 
 /** Second flag byte in snapshots: status effects on a kart. */
-export const FX = { SPIN: 1, SHIELD: 2, PHANTOM: 4, GIANT: 8, MINI: 16, SLOW: 32, WATER: 64, REVERSED: 128 } as const;
+export const FX = { SPIN: 1, SHIELD: 2, PHANTOM: 4, GIANT: 8, MINI: 16, SLOW: 32, WATER: 64, REVERSED: 128, DRAFT: 256, TRICK: 512 } as const;
 
 /** Race-wide chaos events. */
 export const EVENT = { NONE: 0, LOW_GRAVITY: 1, SLIPPERY: 2, WIND: 3, FRENZY: 4, DOUBLE: 5, METEORS: 6, STORM: 7 } as const;

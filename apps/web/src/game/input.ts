@@ -2,6 +2,13 @@
 import { INPUT_BITS } from "@office-kart/shared";
 
 const down = new Set<string>();
+/** Keys physically held, tracked even while driving input is switched off (on the grid). */
+const held = new Set<string>();
+
+/** Is the accelerator (or, on touch screens, the drift button) held? Used to time rocket starts on the grid. */
+export function revHeld(): boolean {
+  return held.has("KeyW") || held.has("ArrowUp") || touch.gas || touch.drift;
+}
 
 /** State of the on-screen controls, written by the touch overlay. */
 export const touch = {
@@ -27,15 +34,25 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 window.addEventListener("keydown", (e) => {
-  if (!enabled || isTyping(e.target)) return;
+  if (isTyping(e.target)) return;
+  held.add(e.code);
+  if (!enabled) return;
   if (GAME_KEYS.has(e.code)) e.preventDefault();
   if (e.code === "KeyR" && !e.repeat) resetQueued = true;
   down.add(e.code);
 });
-window.addEventListener("keyup", (e) => down.delete(e.code));
-window.addEventListener("blur", () => down.clear());
+window.addEventListener("keyup", (e) => {
+  down.delete(e.code);
+  held.delete(e.code);
+});
+window.addEventListener("blur", () => {
+  down.clear();
+  held.clear();
+});
 
 export function setInputEnabled(on: boolean): void {
+  // Keys already held when the lights go green count from the first tick.
+  if (on && !enabled) for (const code of held) if (GAME_KEYS.has(code)) down.add(code);
   enabled = on;
   if (!on) {
     down.clear();

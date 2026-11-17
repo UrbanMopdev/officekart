@@ -7,7 +7,8 @@ import { net, type KartSample } from "../net/connection";
 import { useStore, type Quality } from "../store";
 import { EXHAUST, KartVisual, REAR_LEFT, REAR_RIGHT } from "./kartVisual";
 import { ParticleSystem } from "./particles";
-import { kartActive, kartPos } from "./shared";
+import { feel, kartActive, kartPos } from "./shared";
+import { GhostRecorder, loadGhost, sampleGhost, type Ghost } from "./ghost";
 import { Hazards } from "./Hazards";
 import { TerrainTheme } from "./themes/TerrainTheme";
 import { NeonTheme } from "./themes/NeonTheme";
@@ -15,6 +16,7 @@ import { OfficeTheme } from "./themes/OfficeTheme";
 import { TrackSurface } from "./TrackSurface";
 
 const sample: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0, fx: 0 };
+const probe: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0, fx: 0 };
 const focus: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0, fx: 0 };
 const loc = { idx: 0, along: 0, lateral: 0 };
 const v3 = new THREE.Vector3();
@@ -61,7 +63,8 @@ export function World({ quality }: { quality: Quality }) {
   const fillA = useRef<THREE.PointLight>(null);
   const fillB = useRef<THREE.PointLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
-  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0 });
+  const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean; hint: number }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, hint: 0 });
+  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0 });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
   const fogHome = useRef<{ color: THREE.Color; near: number; far: number } | null>(null);
@@ -132,6 +135,8 @@ export function World({ quality }: { quality: Quality }) {
     return () => {
       for (const v of map.values()) v.dispose();
       map.clear();
+      ghost.current.visual?.dispose();
+      ghost.current.visual = null;
     };
   }, []);
 
@@ -185,7 +190,10 @@ export function World({ quality }: { quality: Quality }) {
           (k.phantom > 0 ? FX.PHANTOM : 0) |
           (k.sizeT > 0 ? (k.sizeK > 0 ? FX.GIANT : FX.MINI) : 0) |
           (k.slow > 0 || k.emp > 0 ? FX.SLOW : 0) |
-          (k.water ? FX.WATER : 0);
+          (k.water ? FX.WATER : 0) |
+          (k.trick !== 0 ? FX.TRICK : 0);
+        // Slipstreaming is decided by the server, so that one flag comes from its snapshot.
+        if (net.sampleKart(p.slot, probe) && (probe.fx & FX.DRAFT) !== 0) sample.fx |= FX.DRAFT;
       } else {
         ok = net.sampleKart(p.slot, sample);
       }
@@ -338,6 +346,50 @@ export function World({ quality }: { quality: Quality }) {
         focus.fx = sample.fx;
       }
     }
+    // --- Ghost of your own best run, when racing alone.
+    {
+      const g = ghost.current;
+      if (inRace && g.race !== room.raceNumber) {
+        g.race = room.raceNumber;
+        g.rec.reset();
+        g.saved = false;
+        g.best = me?.racing && room.players.filter((p) => p.racing).length === 1 ? loadGhost(room.trackId, room.laps, room.speed) : null;
+        if (store.ghostMs !== (g.best?.ms ?? 0)) store.set({ ghostMs: g.best?.ms ?? 0 });
+      }
+      if (driving) {
+        const k = net.predictor.state;
+        g.rec.record(k.tick, k.x, k.y, k.z, k.heading);
+      }
+      if (me?.racing && me.finished && me.finishMs > 0 && !g.saved && g.race === room.raceNumber) {
+        g.saved = true;
+        g.rec.save(room.trackId, room.laps, room.speed, me.finishMs);
+      }
+      let show = false;
+      if (inRace && g.best && room.phase === "racing" && sampleGhost(g.best, net.serverNow() - room.raceStartAt, probe)) {
+        const gdx = probe.x - camera.position.x;
+        const gdz = probe.z - camera.position.z;
+        // Hidden when it would sit right on top of the camera.
+        show = gdx * gdx + gdz * gdz > 9;
+        if (show) {
+          if (!g.visual) {
+            g.visual = new KartVisual();
+            g.visual.setLook({ shadows: false, underglow: false });
+            g.visual.setIdentity("Your best", me?.color ?? 0, true);
+            group.add(g.visual.group);
+          }
+          locate(track, probe.x, probe.z, g.hint, loc);
+          g.hint = loc.idx;
+          g.visual.update(probe.x, probe.y, probe.z, probe.heading, probe.speed, 0, 0, 0, dt, time, FX.PHANTOM);
+        }
+      }
+      if (g.visual) g.visual.group.visible = show;
+      if (!inRace && g.visual) {
+        group.remove(g.visual.group);
+        g.visual.dispose();
+        g.visual = null;
+      }
+    }
+
     for (const [slot, v] of map) {
       if (!kartActive[slot]) {
         group.remove(v.group);
@@ -363,20 +415,40 @@ export function World({ quality }: { quality: Quality }) {
       const boost = (focus.flags & FLAG.BOOST) !== 0;
       c.shake += ((boost && settings.shake ? 1 : 0) - c.shake) * (1 - Math.exp(-dt * 6));
       // Pull back and up a little in the air so jumps read as big.
-      c.air += (((focus.flags & FLAG.AIRBORNE) !== 0 ? 1 : 0) - c.air) * (1 - Math.exp(-dt * 4));
+      const inAir = (focus.flags & FLAG.AIRBORNE) !== 0;
+      c.air += ((inAir ? 1 : 0) - c.air) * (1 - Math.exp(-dt * 4));
+      // A thump through the camera on hard landings and on getting hit.
+      const spun = (focus.fx & FX.SPIN) !== 0;
+      if (settings.shake) {
+        if (c.wasAir && !inAir && c.airFor > 0.35) c.jolt = Math.min(1, 0.35 + c.airFor * 0.5);
+        if (spun && !c.wasSpin) c.jolt = 1;
+      }
+      c.airFor = inAir ? c.airFor + dt : 0;
+      c.wasAir = inAir;
+      c.wasSpin = spun;
+      c.jolt *= Math.exp(-dt * 7);
+      // How fast it should feel: share of this speed class's top speed, and more again while boosting.
+      const top = KART.maxSpeed * net.predictor.ctx.speed;
+      const pace = Math.min(1.45, Math.abs(focus.speed) / top);
+      const rush = Math.max(0, Math.min(1, (pace - 0.82) * 2.2 + c.shake * 0.55));
+      feel.rush += (rush - feel.rush) * (1 - Math.exp(-dt * 6));
+      feel.draft = (focus.fx & FX.DRAFT) !== 0;
       const fx = Math.sin(c.heading);
       const fz = Math.cos(c.heading);
       const jx = Math.sin(time * 61) * 0.035 * c.shake;
-      const jy = Math.sin(time * 47 + 1.3) * 0.03 * c.shake;
-      const back = 8.8 - c.shake * 0.5 + c.air * 2.6;
+      const jy = Math.sin(time * 47 + 1.3) * 0.03 * c.shake + Math.sin(time * 38) * 0.45 * c.jolt;
+      // The camera sits closer and lower the faster the kart goes, and the view widens: both read as speed.
+      const back = 8.8 - c.shake * 1.1 - Math.max(0, pace - 0.5) * 1.4 + c.air * 2.6;
       camera.position.set(focus.x - fx * back + fz * jx, c.y + 4.1 + jy + c.air * 1.4, focus.z - fz * back - fx * jx);
       camera.lookAt(focus.x + fx * 6, focus.y + 1.6, focus.z + fz * 6);
-      fov = 62 + Math.min(1, Math.abs(focus.speed) / KART.maxSpeed) * 9 + c.shake * 8;
+      fov = Math.min(94, 58 + pace * 15 + c.shake * 9 + (net.predictor.ctx.speed - 1) * 9);
       lookX = focus.x + fx * 20;
       lookZ = focus.z + fz * 20;
     } else {
       // Lobby / nothing to follow: slow fly-around of the circuit.
       c.race = -1;
+      feel.rush = 0;
+      feel.draft = false;
       const a = time * 0.05;
       camera.position.set(centre.x + Math.sin(a) * 250, track.maxY + 96, centre.z + Math.cos(a) * 170);
       camera.lookAt(centre.x, track.maxY * 0.4, centre.z);

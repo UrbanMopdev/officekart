@@ -5,6 +5,7 @@ import { net } from "../net/connection";
 import { useMe, useStore } from "../store";
 import { CONTROLS, Kbd } from "./common";
 import { TouchControls } from "./TouchControls";
+import { Callouts, RocketHint, SpeedLines } from "./Juice";
 
 /** Run a callback every animation frame while mounted. */
 function useRaf(fn: () => void): void {
@@ -173,11 +174,15 @@ export function Hud() {
   const underwater = useStore((s) => s.underwater);
   const watching = spectating || !!me?.finished;
   const compact = useStore((s) => s.touch);
+  const ghostMs = useStore((s) => s.ghostMs);
   const shown = compact ? racers.filter((p, i) => i < 3 || p.id === myId) : racers;
 
   return (
     <div className="touch-game pointer-events-none absolute inset-0 select-none p-4" style={{ paddingLeft: "max(1rem, env(safe-area-inset-left))", paddingRight: "max(1rem, env(safe-area-inset-right))" }}>
       {underwater && <div className="absolute inset-0 bg-cyan-500/15 mix-blend-screen" />}
+      {!spectating && <SpeedLines />}
+      {!spectating && <Callouts />}
+      {room.phase === "countdown" && !spectating && <RocketHint touchUi={compact} />}
       {!compact && !spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} />}
       <EventBanner />
       {watching && racers.length > 1 && (
@@ -216,6 +221,7 @@ export function Hud() {
       <div className="absolute left-1/2 top-4 -translate-x-1/2 text-center">
         <RaceTimer startAt={room.raceStartAt} frozenMs={me?.finished ? me.finishMs : 0} />
         {me && me.bestLapMs > 0 && <div className="text-outline text-sm font-bold text-white/85">Best lap {formatRaceTime(me.bestLapMs)}</div>}
+        {ghostMs > 0 && !me?.finished && <div className="text-outline text-xs font-bold text-cyan-200 tall:text-sm">Ghost to beat: {formatRaceTime(ghostMs)}</div>}
       </div>
 
       {/* Standings */}

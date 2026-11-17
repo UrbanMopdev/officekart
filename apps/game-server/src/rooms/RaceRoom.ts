@@ -35,6 +35,10 @@ import {
   type Notice,
   type RaceCtx,
   type Track,
+  DRAFT,
+  ROCKET,
+  SPEED_CLASSES,
+  KART,
 } from "@office-kart/shared";
 import { CHAOS_PACE, ItemWorld, pickEvent, rollItem } from "./items";
 import { activeRoomCount, releaseCode, reserveCode } from "../util/codes";
@@ -85,7 +89,11 @@ interface Racer {
   useHeld: boolean;
   itemSpin: boolean;
   gridPlace: number;
-  stats: { peak: number; driftBoosts: number; airTicks: number; hazardHits: number; itemHits: number };
+  /** Ticks spent tucked in behind another kart; pays out as a slipstream boost. */
+  draft: number;
+  /** Server time the accelerator went down during the countdown (0 = not held). */
+  revAt: number;
+  stats: { peak: number; driftBoosts: number; airTicks: number; hazardHits: number; itemHits: number; tricks: number; drafts: number };
 }
 
 interface ClientMeta {
@@ -117,7 +125,7 @@ export class RaceRoom extends Room<RaceState> {
   private nextCountdownSnapshot = 0;
   private closing = false;
   private readonly items = new ItemWorld(this.track);
-  private readonly ctx: RaceCtx = { event: 0, from: 0, to: 0, hzOff: 0 };
+  private readonly ctx: RaceCtx = { event: 0, from: 0, to: 0, hzOff: 0, speed: 1 };
   /** Tick at which each item box is available again. */
   private boxReady: number[] = [];
   private nextEventTick = 0;
@@ -171,7 +179,7 @@ export class RaceRoom extends Room<RaceState> {
       this.checkVotes();
     });
 
-    this.on(MSG.SETTINGS, (client, _player, payload: { laps?: unknown; trackId?: unknown; chaos?: unknown }) => {
+    this.on(MSG.SETTINGS, (client, _player, payload: { laps?: unknown; trackId?: unknown; chaos?: unknown; speed?: unknown }) => {
       if (!this.isHost(client) || this.state.phase !== "lobby") return;
       const laps = payload?.laps;
       if (typeof laps === "number" && Number.isInteger(laps) && laps >= MIN_LAPS && laps <= MAX_LAPS) {
@@ -183,6 +191,15 @@ export class RaceRoom extends Room<RaceState> {
       }
       const chaos = payload?.chaos;
       if (typeof chaos === "number" && Number.isInteger(chaos) && chaos >= 0 && chaos <= 2) this.state.chaos = chaos;
+      const speed = payload?.speed;
+      if (typeof speed === "number" && Number.isInteger(speed) && speed >= 0 && speed < SPEED_CLASSES.length) this.state.speed = speed;
+    });
+
+    // Rocket starts: the server times the press itself, so the client's clock is never trusted.
+    this.on(MSG.REV, (client, _player, on) => {
+      if (this.state.phase !== "countdown") return;
+      const r = this.racers.get(client.sessionId);
+      if (r) r.revAt = on === true ? Date.now() : 0;
     });
 
     this.on(MSG.START, (client) => {
@@ -405,7 +422,9 @@ export class RaceRoom extends Room<RaceState> {
         useHeld: false,
         itemSpin: false,
         gridPlace: gridPos + 1,
-        stats: { peak: 0, driftBoosts: 0, airTicks: 0, hazardHits: 0, itemHits: 0 },
+        draft: 0,
+        revAt: 0,
+        stats: { peak: 0, driftBoosts: 0, airTicks: 0, hazardHits: 0, itemHits: 0, tricks: 0, drafts: 0 },
         queue: [],
         lastSeq: 0,
         lastQueuedSeq: 0,
@@ -431,6 +450,7 @@ export class RaceRoom extends Room<RaceState> {
     this.ctx.from = 0;
     this.ctx.to = 0;
     this.ctx.hzOff = 0;
+    this.ctx.speed = SPEED_CLASSES[st.speed]?.k ?? 1;
     st.eventId = 0;
     st.eventFrom = 0;
     st.eventTo = 0;
@@ -506,6 +526,15 @@ export class RaceRoom extends Room<RaceState> {
         st.phase = "racing";
         this.raceTick = 0;
         this.acc = 0;
+        // Rocket start for anyone who hit the accelerator just before the lights went green.
+        for (const r of this.order) {
+          const held = r.revAt > 0 ? st.raceStartAt - r.revAt : -1;
+          const level = held >= ROCKET.late && held <= ROCKET.perfect ? 2 : held > ROCKET.perfect && held <= ROCKET.good ? 1 : 0;
+          if (level > 0) {
+            r.kart.boost = ROCKET.boost[level];
+            this.broadcast(MSG.FX, { kind: "rocket", slot: r.slot, item: level, x: r.kart.x, y: r.kart.y, z: r.kart.z });
+          }
+        }
       } else if (now >= this.nextCountdownSnapshot) {
         this.nextCountdownSnapshot = now + 250;
         this.sendSnapshot();
@@ -579,6 +608,37 @@ export class RaceRoom extends Room<RaceState> {
       }
     }
 
+    // Slipstream: sit in the air pocket behind another kart for a moment and get slung past it.
+    const draftSpeed = KART.maxSpeed * this.ctx.speed * 0.55;
+    for (const a of order) {
+      const ka = a.kart;
+      let tucked = false;
+      if (!a.finished && !ka.air && !ka.water && ka.speed > draftSpeed && ka.spin <= 0) {
+        const fx = Math.sin(ka.vAngle);
+        const fz = Math.cos(ka.vAngle);
+        for (const b of order) {
+          if (b === a || b.finished) continue;
+          const kb = b.kart;
+          const dx = kb.x - ka.x;
+          const dz = kb.z - ka.z;
+          const along = dx * fx + dz * fz;
+          if (along < DRAFT.minDist || along > DRAFT.maxDist || Math.abs(kb.y - ka.y) > 3 || kb.speed < draftSpeed * 0.6) continue;
+          if (Math.abs(dx * fz - dz * fx) < DRAFT.halfWidth + along * 0.05) {
+            tucked = true;
+            break;
+          }
+        }
+      }
+      if (tucked) {
+        if (++a.draft >= DRAFT.chargeTicks) {
+          a.draft = 0;
+          if (ka.emp <= 0) ka.boost = Math.max(ka.boost, DRAFT.boost);
+          a.stats.drafts++;
+          this.broadcast(MSG.FX, { kind: "draft", slot: a.slot, x: ka.x, y: ka.y, z: ka.z });
+        }
+      } else if (a.draft > 0) a.draft = Math.max(0, a.draft - 3);
+    }
+
     // Power-ups: pick up from boxes, use on a fresh press of the item button.
     const live = order.filter((r) => !r.finished).length;
     for (const r of order) {
@@ -630,6 +690,7 @@ export class RaceRoom extends Room<RaceState> {
     const wasSpin = k.spin > 0;
     const wasDrift = k.driftDir !== 0;
     const boostBefore = k.boost;
+    const trickBefore = k.trick !== 0 && k.air;
     stepKart(k, r.input, track, this.ctx);
     r.input.reset = false;
     r.simTicks++;
@@ -640,6 +701,7 @@ export class RaceRoom extends Room<RaceState> {
     if (k.speed > r.stats.peak) r.stats.peak = k.speed;
     if (k.air) r.stats.airTicks++;
     if (wasDrift && k.driftDir === 0 && k.boost > boostBefore) r.stats.driftBoosts++;
+    if (trickBefore && !k.air && k.boost > boostBefore) r.stats.tricks++;
     if (!wasSpin && k.spin > 0) {
       if (r.itemSpin) r.itemSpin = false;
       else {
@@ -714,6 +776,8 @@ export class RaceRoom extends Room<RaceState> {
       if (k.slow > 0 || k.emp > 0) fx |= FX.SLOW;
       if (k.water) fx |= FX.WATER;
       if (k.reverse > 0) fx |= FX.REVERSED;
+      if (r.draft > 6) fx |= FX.DRAFT;
+      if (k.trick !== 0) fx |= FX.TRICK;
       flat.push(r.slot, k.x, k.z, k.heading, k.speed, flags, k.y, fx);
     }
     const taken: number[] = [];
@@ -795,6 +859,10 @@ export class RaceRoom extends Room<RaceState> {
     if (comeback) add("Comeback Champion", comeback.p.name, `gained ${comeback.r.gridPlace - comeback.p.place} places`);
     const agent = best((x) => x.r.stats.itemHits, 1);
     if (agent) add("Chaos Agent", agent.p.name, `${agent.r.stats.itemHits} item hits`);
+    const tricks = best((x) => x.r.stats.tricks, 2);
+    if (tricks) add("Show-Off", tricks.p.name, `${tricks.r.stats.tricks} jump tricks landed`);
+    const drafts = best((x) => x.r.stats.drafts, 1);
+    if (drafts) add("Slipstreamer", drafts.p.name, `${drafts.r.stats.drafts} slipstream boosts`);
     const air = best((x) => x.r.stats.airTicks, 20);
     if (air) add("Air Time Legend", air.p.name, `${(air.r.stats.airTicks * DT).toFixed(1)} s in the air`);
     const unlucky = best((x) => x.r.stats.hazardHits, 1);

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CHAOS_LEVELS, KART_COLORS, MAX_LAPS, MAX_PLAYERS, MIN_LAPS, MSG, SURFACE_TYPES, TRACK_DEFS, getTrack } from "@office-kart/shared";
+import { CHAOS_LEVELS, KART, KART_COLORS, SPEED_CLASSES, MAX_LAPS, MAX_PLAYERS, MIN_LAPS, MSG, SURFACE_TYPES, TRACK_DEFS, getTrack } from "@office-kart/shared";
 import { net } from "../net/connection";
 import { useMe, useStore, type Quality } from "../store";
 import { Button, Panel } from "./common";
@@ -200,6 +200,19 @@ export function Lobby() {
                     </button>
                   ))}
                 </dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-white/60">Speed</dt>
+                <dd className="flex rounded-xl bg-white/10 p-1">
+                  {SPEED_CLASSES.map((c, i) => (
+                    <button key={c.name} type="button" disabled={!isHost} aria-pressed={room.speed === i} title={`${c.tag} · top speed ${Math.round(KART.maxSpeed * c.k * 3.6)} km/h`} onClick={() => net.send(MSG.SETTINGS, { speed: i })} className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${room.speed === i ? (i === 3 ? "bg-rose-500 text-white" : "bg-amber-400 text-slate-900") : "text-white/70"}`}>
+                      {c.name}
+                    </button>
+                  ))}
+                </dd>
+              </div>
+              <div className="-mt-1 text-right text-xs text-white/50">
+                {SPEED_CLASSES[room.speed]?.tag} · top speed {Math.round(KART.maxSpeed * (SPEED_CLASSES[room.speed]?.k ?? 1) * 3.6)} km/h
               </div>
               <div className="flex items-center justify-between">
                 <dt className="text-white/60">Laps</dt>

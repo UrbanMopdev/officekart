@@ -10,6 +10,7 @@ import {
   INPUT_BITS,
   MSG,
   Predictor,
+  SPEED_CLASSES,
   ROOM_NAME,
   TICK_MS,
   angleDiff,
@@ -175,6 +176,7 @@ export class Bot {
     if (phase !== this.lastPhase) {
       if (phase === "countdown") {
         this.predictor.reset(getTrack(this.room.state.trackId));
+        this.predictor.ctx.speed = SPEED_CLASSES[this.room.state.speed as number]?.k ?? 1;
         this.selfTrace = [];
         this.maxServerSpeed = 0;
       }

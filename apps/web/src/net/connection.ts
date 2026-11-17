@@ -7,6 +7,7 @@ import { Client, type Room } from "colyseus.js";
 import {
   DEFAULT_TRACK_ID,
   DT,
+  SPEED_CLASSES,
   MSG,
   TICK_MS,
   hazardTime,
@@ -21,7 +22,7 @@ import {
   type PlayerView,
   type RoomView,
 } from "@office-kart/shared";
-import { sampleInput, setInputEnabled } from "../game/input";
+import { revHeld, sampleInput, setInputEnabled } from "../game/input";
 import { useStore } from "../store";
 
 /** Remote karts are drawn this far in the past so there are always two snapshots to blend. */
@@ -115,6 +116,7 @@ function toView(state: any): RoomView {
     raceNumber: state.raceNumber,
     players,
     chaos: state.chaos ?? 0,
+    speed: state.speed ?? 0,
     eventId: state.eventId ?? 0,
     eventFrom: state.eventFrom ?? 0,
     eventTo: state.eventTo ?? 0,
@@ -145,6 +147,7 @@ class Net {
   taken = new Set<number>();
   /** Subscribers to one-off happenings (hits, pickups, item use) for sound and effects. */
   readonly fxListeners = new Set<(fx: FxMessage) => void>();
+  private rev = false;
 
   readonly predictor = new Predictor(getTrack(DEFAULT_TRACK_ID));
 
@@ -159,7 +162,7 @@ class Net {
     useStore.getState().set({
       status: "connected",
       myId: "p0",
-      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players, chaos: 0, eventId: 0, eventFrom: 0, eventTo: 0, hzOff: 0, voteEndsAt: 0, awards: [] },
+      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players, chaos: 0, speed: 0, eventId: 0, eventFrom: 0, eventTo: 0, hzOff: 0, voteEndsAt: 0, awards: [] },
     });
     const t0 = performance.now();
     this.previewStart = t0;
@@ -367,6 +370,7 @@ class Net {
     ctx.from = view.eventFrom;
     ctx.to = view.eventTo;
     ctx.hzOff = view.hzOff;
+    ctx.speed = SPEED_CLASSES[view.speed]?.k ?? 1;
     useStore.getState().set({ room: view });
   }
 
@@ -420,6 +424,12 @@ class Net {
       if (this.acc >= DT) this.acc = 0; // fell too far behind (tab was hidden): drop the backlog
     } else {
       this.acc = 0;
+    }
+    // On the grid: tell the server when the accelerator goes down or up, so it can time a rocket start.
+    const rev = this.room !== null && useStore.getState().room?.phase === "countdown" && revHeld();
+    if (rev !== this.rev) {
+      this.rev = rev;
+      if (this.room && useStore.getState().room?.phase === "countdown") this.room.send(MSG.REV, rev);
     }
     this.predictor.decay(dt);
     this.alpha = this.acc / DT;

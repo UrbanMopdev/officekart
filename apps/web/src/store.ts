@@ -46,6 +46,8 @@ interface Store {
   setSettings(patch: Partial<Settings>): void;
   /** Camera is below the water line. */
   underwater: boolean;
+  /** Time of the ghost run being raced against right now (0 = none). */
+  ghostMs: number;
   /** While watching: which racer (by place order) the camera follows. */
   spectate: number;
   name: string;
@@ -120,6 +122,7 @@ export const useStore = create<Store>((set) => ({
     });
   },
   underwater: false,
+  ghostMs: 0,
   spectate: 0,
   status: "idle",
   room: null,

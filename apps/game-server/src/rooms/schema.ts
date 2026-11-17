@@ -1,5 +1,5 @@
 import { ArraySchema, MapSchema, Schema, type } from "@colyseus/schema";
-import { DEFAULT_TRACK_ID } from "@office-kart/shared";
+import { DEFAULT_SPEED_CLASS, DEFAULT_TRACK_ID } from "@office-kart/shared";
 
 /**
  * Low-frequency room state, synchronised by Colyseus as binary deltas: lobby
@@ -48,7 +48,9 @@ export class RaceState extends Schema {
   @type("float64") raceStartAt = 0;
   @type("uint16") raceNumber = 0;
   /** 0 Normal, 1 Chaotic, 2 Absolute Mayhem. */
-  @type("uint8") chaos = 0;
+  @type("uint8") chaos = 1;
+  /** Index into SPEED_CLASSES. */
+  @type("uint8") speed = DEFAULT_SPEED_CLASS;
   /** Current or announced chaos event and the race ticks it runs between. */
   @type("uint8") eventId = 0;
   @type("int32") eventFrom = 0;
