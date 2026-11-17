@@ -29,7 +29,25 @@ interface Palette {
   banner: [string, string, string];
 }
 
+/** Overlay colour for each surface type (index matches SURFACE_TYPES). */
+const SURFACE_COLORS = ["#2d313c", "#a8834f", "#5a3a1f", "#bfe8ff", "#f3f7fd", "#e3cb8a", "#22d3ee"];
+
 const PALETTES: Record<TrackTheme, Palette> = {
+  alpine: {
+    road: { base: "#33363f", edge: "#f1f5f9", centre: "#f8fafc", speckle: 1 },
+    roadRoughness: 0.88,
+    roadMetalness: 0,
+    turf: ["#8f7d5d", "#857456"],
+    turfRoughness: 1,
+    kerb: ["#dc2626", "#f8fafc"],
+    barrier: ["#f8fafc", "#dc2626"],
+    led: "#ffffff",
+    ledGlow: 0,
+    pad: ["#ea580c", "#fde047"],
+    board: ["#111827", "#facc15"],
+    gantry: "#b91c1c",
+    banner: ["#b91c1c", "#f8fafc", "#fbbf24"],
+  },
   office: {
     road: { base: "#2d313c", edge: "#f1f5f9", centre: "#facc15", speckle: 1 },
     roadRoughness: 0.86,
@@ -65,6 +83,8 @@ const PALETTES: Record<TrackTheme, Palette> = {
 interface StripOptions {
   uvScale?: number;
   color?: (i: number) => THREE.Color;
+  /** Leave out the stretch starting at sample i (on top of gaps, which are always left out). */
+  skip?: (i: number) => boolean;
 }
 
 /** A band of quads following the track between two (lateral, height) offsets. */
@@ -78,7 +98,7 @@ export function strip(track: Track, latA: number, yA: number, latB: number, yB: 
   let c = 0;
   const put = (i: number, lat: number, y: number, uu: number, vv: number, color?: THREE.Color) => {
     pos[p++] = px[i] + nx[i] * lat;
-    pos[p++] = y;
+    pos[p++] = y + track.hy[i] + lat * track.bankT[i];
     pos[p++] = pz[i] + nz[i] * lat;
     if (uv) {
       uv[u++] = uu;
@@ -92,6 +112,7 @@ export function strip(track: Track, latA: number, yA: number, latB: number, yB: 
   };
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
+    if (track.gap[i] || opts.skip?.(i)) continue;
     const v0 = opts.uvScale ? (i * spacing) / opts.uvScale : 0;
     const v1 = opts.uvScale ? ((i + 1) * spacing) / opts.uvScale : 0;
     const color = opts.color?.(i);
@@ -103,20 +124,22 @@ export function strip(track: Track, latA: number, yA: number, latB: number, yB: 
     put(j, latA, yA, 0, v1, color);
   }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  if (uv) geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-  if (col) geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geo.setAttribute("position", new THREE.BufferAttribute(pos.subarray(0, p), 3));
+  if (uv) geo.setAttribute("uv", new THREE.BufferAttribute(uv.subarray(0, u), 2));
+  if (col) geo.setAttribute("color", new THREE.BufferAttribute(col.subarray(0, c), 3));
   return geo;
 }
 
 /** Sweep a cross-section along both sides of the track and smooth it. */
-function sweep(track: Track, profile: [number, number][], color: (i: number) => THREE.Color): THREE.BufferGeometry {
+function sweep(track: Track, profile: [number, number][], color: (i: number) => THREE.Color, respectOpenSides = false): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   for (const side of [1, -1]) {
+    // Barriers are left out where the track definition says the edge is open.
+    const skip = respectOpenSides ? (i: number) => (track.open[i] & (side > 0 ? 2 : 1)) !== 0 : undefined;
     for (let k = 0; k < profile.length - 1; k++) {
       const [la, ya] = profile[k];
       const [lb, yb] = profile[k + 1];
-      parts.push(strip(track, la * side, ya, lb * side, yb, { color }));
+      parts.push(strip(track, la * side, ya, lb * side, yb, { color, skip }));
     }
   }
   const merged = mergeVertices(mergeGeometries(parts, false)!, 1e-3);
@@ -214,6 +237,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
           [wall + 1.0, 0],
         ],
         (i) => (Math.floor(i / 5) % 2 ? barA : barB),
+        true,
       ),
       new THREE.MeshStandardMaterial({ vertexColors: true, roughness: theme === "neon" ? 0.3 : 0.4, metalness: theme === "neon" ? 0.6 : 0.05, side: THREE.DoubleSide }),
     );
@@ -234,7 +258,31 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
       ],
       false,
     )!;
-    group.add(new THREE.Mesh(ledGeo, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, side: THREE.DoubleSide })));
+    if (pal.ledGlow > 0) group.add(new THREE.Mesh(ledGeo, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, side: THREE.DoubleSide })));
+
+    // --- Surface patches (ice, mud, dirt, snow, sand, boost road)
+    if (track.zones.length) {
+      const solid: THREE.BufferGeometry[] = [];
+      const glow: THREE.BufferGeometry[] = [];
+      for (const z of track.zones) {
+        const inside = (i: number) => (z.i0 <= z.i1 ? i >= z.i0 && i < z.i1 : i >= z.i0 || i < z.i1);
+        const a = Math.max(-road + 0.4, z.latMin);
+        const b2 = Math.min(road - 0.4, z.latMax);
+        const boost = z.type === 6;
+        const base = new THREE.Color(SURFACE_COLORS[z.type]);
+        const alt = base.clone().multiplyScalar(boost ? 0.35 : 0.9);
+        const hot = base.clone().multiplyScalar(1.9);
+        (boost ? glow : solid).push(strip(track, a, 0.075, b2, 0.075, { skip: (i) => !inside(i), color: (i) => (boost ? (i % 2 ? hot : alt) : Math.floor(i / 3) % 2 ? base : alt) }));
+      }
+      if (solid.length) {
+        const g = mergeGeometries(solid, false)!;
+        g.computeVertexNormals();
+        const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32 }));
+        m.receiveShadow = true;
+        group.add(m);
+      }
+      if (glow.length) group.add(new THREE.Mesh(mergeGeometries(glow, false)!, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
+    }
 
     // --- Start line and gantry
     const h0 = Math.atan2(track.tx[0], track.tz[0]);
@@ -242,14 +290,14 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     line.rotation.set(-Math.PI / 2, 0, 0);
     line.receiveShadow = true;
     const lineHolder = new THREE.Group();
-    lineHolder.position.set(track.px[0], 0.065, track.pz[0]);
+    lineHolder.position.set(track.px[0], track.hy[0] + 0.065, track.pz[0]);
     lineHolder.rotation.y = h0;
     lineHolder.add(line);
     group.add(lineHolder);
 
     const b = new Builder(400);
     const span = wall + 2.4;
-    b.push(track.px[0], 0, track.pz[0], h0);
+    b.push(track.px[0], track.hy[0], track.pz[0], h0);
     for (const side of [-1, 1]) {
       b.rbox(3.4, 0.7, 3.4, 0.2, side * span, 0.35, 0, "#111827", { bucket: "metal" });
       b.rbox(1.5, 12, 1.5, 0.25, side * span, 6, 0, "#1f2937", { bucket: "metal" });
@@ -266,7 +314,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     const bannerTex = keep(bannerTexture(track.def.name.toUpperCase(), pal.banner[0], pal.banner[1], pal.banner[2]));
     const bannerMat = new THREE.MeshBasicMaterial({ map: bannerTex, toneMapped: false });
     const gantry = new THREE.Group();
-    gantry.position.set(track.px[0], 11.3, track.pz[0]);
+    gantry.position.set(track.px[0], track.hy[0] + 11.3, track.pz[0]);
     gantry.rotation.y = h0;
     for (const dir of [-1, 1]) {
       const plane = new THREE.Mesh(new THREE.PlaneGeometry(span * 2 - 1.5, 2.5), bannerMat);
@@ -283,8 +331,9 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     for (const pad of track.pads) {
       const mid = Math.round((pad.i0 + pad.i1) / 2) % track.n;
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pad.halfWidth * 2, (pad.i1 - pad.i0) * track.spacing), padMat);
-      mesh.position.set(track.px[mid] + track.nx[mid] * pad.lateral, 0.075, track.pz[mid] + track.nz[mid] * pad.lateral);
-      mesh.rotation.set(-Math.PI / 2, 0, Math.atan2(track.tx[mid], track.tz[mid]) + Math.PI);
+      mesh.position.set(track.px[mid] + track.nx[mid] * pad.lateral, track.hy[mid] + pad.lateral * track.bankT[mid] + 0.09, track.pz[mid] + track.nz[mid] * pad.lateral);
+      // Lie flat on the road, tilted to follow its slope, chevrons pointing down the track.
+      mesh.rotation.set(-Math.PI / 2 - Math.atan(track.slope[mid]), Math.atan2(track.tx[mid], track.tz[mid]) + Math.PI, 0, "YXZ");
       group.add(mesh);
     }
 
@@ -295,7 +344,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
       const a = (i - 2 + track.n) % track.n;
       const c = (i + 2) % track.n;
       const curve = ((track.tx[c] - track.tx[a]) * track.nx[i] + (track.tz[c] - track.tz[a]) * track.nz[i]) / (4 * track.spacing);
-      if (Math.abs(curve) > 1 / 48 && i - last >= 4) {
+      if (Math.abs(curve) > 1 / 48 && i - last >= 4 && !track.gap[i] && !(track.open[i] & (curve > 0 ? 1 : 2))) {
         spots.push({ i, side: curve > 0 ? 1 : -1 });
         last = i;
       }
@@ -314,7 +363,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
         // Outside of a right-hander is the left barrier, and vice versa.
         const lat = -side * (wall + 0.5);
         q.setFromAxisAngle(up, Math.atan2(-track.tx[i], -track.tz[i]));
-        m.compose(new THREE.Vector3(track.px[i] + track.nx[i] * lat, 2.35, track.pz[i] + track.nz[i] * lat), q, new THREE.Vector3(side, 1, 1));
+        m.compose(new THREE.Vector3(track.px[i] + track.nx[i] * lat, track.hy[i] + lat * track.bankT[i] + 2.35, track.pz[i] + track.nz[i] * lat), q, new THREE.Vector3(side, 1, 1));
         boards.setMatrixAt(k, m);
       });
       boards.instanceMatrix.needsUpdate = true;
@@ -341,7 +390,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
   return (
     <>
       <primitive object={root} />
-      <StartLights x={track.px[0]} y={8.4} z={track.pz[0]} heading={Math.atan2(track.tx[0], track.tz[0])} />
+      <StartLights x={track.px[0]} y={track.hy[0] + 8.4} z={track.pz[0]} heading={Math.atan2(track.tx[0], track.tz[0])} />
     </>
   );
 }

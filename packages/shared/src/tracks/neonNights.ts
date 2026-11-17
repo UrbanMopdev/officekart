@@ -7,6 +7,7 @@ import type { TrackDef } from "../track";
 export const NEON_NIGHTS: TrackDef = {
   id: "neon-nights",
   name: "Neon Nights",
+  difficulty: "Medium",
   theme: "neon",
   blurb: "A glowing skyway above the city after dark. Fast sweepers and a tight final complex.",
   controlPoints: [

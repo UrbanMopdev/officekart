@@ -5,7 +5,7 @@ export type Phase = "lobby" | "countdown" | "racing" | "results";
 export const MSG = {
   /** client -> server: [seq, inputBits, steer] */
   INPUT: "i",
-  /** server -> all: [serverTimeMs, tick, [slot, x, z, heading, speed, flags] * karts] */
+  /** server -> all: [serverTimeMs, tick, [slot, x, z, heading, speed, flags, y] * karts] */
   SNAPSHOT: "s",
   /** server -> owner: [ackSeq, ...packKartState] */
   SELF: "m",
@@ -24,7 +24,7 @@ export const MSG = {
 } as const;
 
 /** Numbers per kart in a snapshot's flat array. */
-export const SNAPSHOT_STRIDE = 6;
+export const SNAPSHOT_STRIDE = 7;
 
 export interface JoinOptions {
   name: string;

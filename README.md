@@ -10,7 +10,11 @@ multiplayer race with a server-authoritative simulation, on two long circuits. P
 
 - Private lobbies with a six-character code and a shareable invite link (`/r/ABC123`)
 - 2–12 human racers per lobby, guest nicknames, kart colour selection, ready-up, host settings (track, laps)
-- Two circuits: **Office Dash** (1.9 km, about a minute a lap) and **Neon Nights** (2.5 km, about 80 seconds)
+- Three circuits: **Office Dash** (1.9 km, about a minute a lap), **Neon Nights** (2.5 km, about 80
+  seconds) and **Proving Grounds** (1.6 km mountain test track with hills, jumps and mixed terrain)
+- Elevation and terrain physics: slopes that speed you up and slow you down, banked corners, jumps with
+  limited air control, a ravine gap and an open cliff edge with automatic recovery, and six surface
+  types (dirt, mud, ice, snow, sand, boost road) that each handle differently
 - Server-authoritative racing at 30 Hz: the server simulates every kart from player inputs
 - Client-side prediction with server reconciliation for your own kart; interpolation for everyone else's
 - Arcade handling: speed-sensitive steering, drifting with three mini-turbo levels, boost pads,
@@ -24,6 +28,27 @@ multiplayer race with a server-authoritative simulation, on two long circuits. P
 
 Not built yet: power-ups, the other three tracks, Grand Prix / Team Battle / Time Trial, characters and
 kart classes, audio, gamepad support, PostgreSQL-backed profiles and leaderboards.
+
+## Office Kart 2.0 roadmap
+
+The 2.0 specification is being built in its own phase order, each phase proven before the next starts.
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Elevation, slope physics, ramps and jumps, terrain grip and speed, height-aware collisions, recovery, checkpoint validation, test track | **Done** (Proving Grounds) |
+| 2 | Moving obstacles: rolling, swinging, rotating, platforms, collapsing sections, warnings | Not started |
+| 3 | The eight themed tracks | Not started |
+| 4 | Underwater driving | Not started |
+| 5 | Chaos events and power-ups | Not started |
+| 6 | Music, sound effects, cinematic polish | Not started |
+| 7 | Rivalries, awards, spectating, rematch votes | Not started |
+
+How Phase 1 works: a track definition can now carry a height profile, automatic banking, surface zones,
+gaps and open edges. The kart simulation in `packages/shared` tracks height and vertical speed, follows
+the road, leaves it over crests and ramp lips, and lands again; the same code predicts your own kart in
+the browser, so jumps feel immediate and still agree with the server. Flat tracks behave exactly as
+before. `npm run test:physics -w @office-kart/game-server` checks all of it offline, including falling
+into the ravine and recovering.
 
 ## Graphics
 
@@ -42,6 +67,8 @@ Everything on screen is generated in code; the game ships no model or image file
   chairs, filing cabinets)
 - **Neon Nights**: an elevated skyway over a city at night, with lit towers, light arches, glowing
   rails, stars and a moon
+- **Proving Grounds**: a mountain landscape generated from the circuit itself, with peaks, pines,
+  boulders, a lake, a ravine under the jump and a cliff at the open edge
 
 Static scenery is merged into a few dozen meshes per track, split by map cell so off-screen areas are
 skipped. Three quality levels are selectable in the lobby:
@@ -88,6 +115,7 @@ Open http://localhost:5173 in two browser windows, create a lobby in one and joi
 ```bash
 npm run build        # the tests run against the built server
 npm run test:track   # track geometry sanity checks
+npm run test:physics -w @office-kart/game-server   # hills, jumps, surfaces, falls and recovery
 npm run test:race    # 29 end-to-end checks through real network clients
 npm run test:load    # 12-client race with CPU, memory, tick and latency figures
                      # (TRACK=neon-nights LAPS=2 to change circuit and distance)

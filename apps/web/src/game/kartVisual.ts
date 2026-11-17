@@ -282,9 +282,27 @@ export class KartVisual {
     this.label.visible = showLabel;
   }
 
-  update(x: number, z: number, heading: number, speed: number, flags: number, dt: number, time: number): void {
-    this.group.position.set(x, 0, z);
-    this.group.rotation.y = heading;
+  /** Search hint for finding this kart's place on the track. */
+  hint = -1;
+  wasAir = false;
+  private tiltX = 0;
+  private tiltZ = 0;
+  private lastY = 0;
+
+  /** `pitch` and `roll` are the slope of the ground under the kart (nose-up and right-side-up, radians). */
+  update(x: number, y: number, z: number, heading: number, speed: number, flags: number, pitch: number, roll: number, dt: number, time: number): void {
+    this.group.position.set(x, y, z);
+    const airborne = (flags & FLAG.AIRBORNE) !== 0;
+    if (airborne && dt > 0) {
+      // In the air the nose follows the arc of the jump.
+      pitch = Math.max(-0.5, Math.min(0.5, Math.atan2((y - this.lastY) / dt, Math.max(8, Math.abs(speed)))));
+      roll = 0;
+    }
+    this.lastY = y;
+    const kt = 1 - Math.exp(-dt * (airborne ? 6 : 14));
+    this.tiltX += (-pitch - this.tiltX) * kt;
+    this.tiltZ += (-roll - this.tiltZ) * kt;
+    this.group.rotation.set(this.tiltX, heading, this.tiltZ, "YXZ");
     if (!this.started) {
       this.started = true;
       this.lastHeading = heading;
@@ -341,7 +359,7 @@ export class KartVisual {
     const s = Math.sin(h);
     const c = Math.cos(h);
     out.x = this.group.position.x + local.x * c + local.z * s;
-    out.y = local.y;
+    out.y = this.group.position.y + local.y;
     out.z = this.group.position.z - local.x * s + local.z * c;
     return out;
   }

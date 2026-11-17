@@ -9,6 +9,7 @@ import type { TrackDef } from "../track";
 export const OFFICE_DASH: TrackDef = {
   id: "office-dash",
   name: "Office Dash",
+  difficulty: "Medium",
   theme: "office",
   blurb: "A sunlit lap of the office floor, under the desks and round the coffee mugs.",
   controlPoints: [

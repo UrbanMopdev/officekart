@@ -49,6 +49,8 @@ interface Snap {
 
 export interface KartSample {
   x: number;
+  /** Height above the track's zero level. */
+  y: number;
   z: number;
   heading: number;
   speed: number;
@@ -142,6 +144,7 @@ class Net {
       const lat = [0, 3.4, -3.2, 1.2, -4.2, 4.4][slot] ?? 0;
       out.x = track.px[i] + (track.px[j] - track.px[i]) * k + track.nx[i] * lat;
       out.z = track.pz[i] + (track.pz[j] - track.pz[i]) * k + track.nz[i] * lat;
+      out.y = track.hy[i] + (track.hy[j] - track.hy[i]) * k + lat * track.bankT[i];
       out.heading = Math.atan2(track.tx[i], track.tz[i]) + (slot === 1 ? -0.1 : 0);
       out.speed = 28;
       // A drifting kart with sparks, a boosting kart, and the rest cruising.
@@ -384,6 +387,7 @@ class Net {
     const b = p.state;
     out.x = a.x + (b.x - a.x) * alpha + p.errX;
     out.z = a.z + (b.z - a.z) * alpha + p.errZ;
+    out.y = a.y + (b.y - a.y) * alpha + p.errY;
     out.heading = a.heading + angleDiff(b.heading, a.heading) * alpha + p.errH;
     out.speed = b.speed;
     out.flags = 0;
@@ -413,6 +417,7 @@ class Net {
       out.heading = ah;
       out.speed = as;
       out.flags = a.flat[ia + 5];
+      out.y = a.flat[ia + 6] ?? 0;
       return true;
     }
     const span = b.t - a.t;
@@ -422,6 +427,8 @@ class Net {
     out.heading = ah + angleDiff(b.flat[ib + 3], ah) * t;
     out.speed = as + (b.flat[ib + 4] - as) * t;
     out.flags = b.flat[ib + 5];
+    const ay = a.flat[ia + 6] ?? 0;
+    out.y = ay + ((b.flat[ib + 6] ?? 0) - ay) * t;
     return true;
   }
 }

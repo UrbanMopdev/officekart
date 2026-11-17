@@ -589,7 +589,8 @@ export class RaceRoom extends Room<RaceState> {
       flags |= driftLevel(k.driftCharge) << FLAG.LEVEL_SHIFT;
       if (k.offroad) flags |= FLAG.OFFROAD;
       if (r.finished) flags |= FLAG.FINISHED;
-      flat.push(r.slot, k.x, k.z, k.heading, k.speed, flags);
+      if (k.air) flags |= FLAG.AIRBORNE;
+      flat.push(r.slot, k.x, k.z, k.heading, k.speed, flags, k.y);
     }
     this.broadcast(MSG.SNAPSHOT, [Date.now(), this.raceTick, flat]);
     for (const client of this.clients) {

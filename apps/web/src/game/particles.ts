@@ -46,6 +46,8 @@ export interface Emit {
   alpha: number;
   gravity: number;
   drag: number;
+  /** Height the particle bounces on (the road under the kart). */
+  floor?: number;
 }
 
 export class ParticleSystem {
@@ -66,7 +68,7 @@ export class ParticleSystem {
     this.col = new Float32Array(capacity * 4);
     this.size = new Float32Array(capacity);
     this.vel = new Float32Array(capacity * 3);
-    this.meta = new Float32Array(capacity * 7);
+    this.meta = new Float32Array(capacity * 8);
     this.geometry.setAttribute("position", new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
     this.geometry.setAttribute("aColor", new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
     this.geometry.setAttribute("aSize", new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
@@ -96,7 +98,8 @@ export class ParticleSystem {
     this.col[i * 4 + 1] = e.g;
     this.col[i * 4 + 2] = e.b;
     this.col[i * 4 + 3] = e.alpha;
-    const m = i * 7;
+    const m = i * 8;
+    this.meta[m + 7] = (e.floor ?? 0) + 0.06;
     this.meta[m] = e.life;
     this.meta[m + 1] = e.life;
     this.meta[m + 2] = e.size;
@@ -112,7 +115,7 @@ export class ParticleSystem {
     this.material.uniforms.uScale.value = pixelsPerUnit;
     const { pos, vel, col, size, meta } = this;
     for (let i = 0; i < this.cap; i++) {
-      const m = i * 7;
+      const m = i * 8;
       if (meta[m] <= 0) continue;
       meta[m] -= dt;
       if (meta[m] <= 0) {
@@ -128,8 +131,8 @@ export class ParticleSystem {
       pos[i * 3] += vel[i * 3] * dt;
       pos[i * 3 + 1] += vel[i * 3 + 1] * dt;
       pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
-      if (pos[i * 3 + 1] < 0.06) {
-        pos[i * 3 + 1] = 0.06;
+      if (pos[i * 3 + 1] < meta[m + 7]) {
+        pos[i * 3 + 1] = meta[m + 7];
         vel[i * 3 + 1] *= -0.35;
       }
       col[i * 4 + 3] = meta[m + 4] * (1 - k) * (1 - k * 0.3);

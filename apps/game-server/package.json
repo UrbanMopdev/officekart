@@ -8,6 +8,7 @@
     "start": "node --enable-source-maps dist/server.js",
     "typecheck": "tsc -p tsconfig.json",
     "test:track": "tsx scripts/validate-track.ts",
+    "test:physics": "tsx scripts/physics-test.ts",
     "test:race": "tsx scripts/race-test.ts",
     "test:load": "tsx scripts/load-test.ts"
   },

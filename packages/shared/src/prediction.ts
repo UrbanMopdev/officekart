@@ -27,6 +27,7 @@ export class Predictor {
   errX = 0;
   errZ = 0;
   errH = 0;
+  errY = 0;
   seq = 0;
   /** Largest and total correction distance since the last reset (diagnostics). */
   maxCorrection = 0;
@@ -43,7 +44,7 @@ export class Predictor {
     this.track = track;
     this.pending = [];
     this.seq = 0;
-    this.errX = this.errZ = this.errH = 0;
+    this.errX = this.errZ = this.errH = this.errY = 0;
     this.maxCorrection = 0;
     this.corrections = 0;
     this.hasState = false;
@@ -88,12 +89,13 @@ export class Predictor {
     this.hasState = true;
     if (first) return 0;
 
+    this.errY += this.before.y - this.state.y;
     const dx = this.before.x - this.state.x;
     const dz = this.before.z - this.state.z;
     const dist = Math.hypot(dx, dz);
     if (dist > 12) {
       // Far too large to smooth (reset, respawn, long stall): snap.
-      this.errX = this.errZ = this.errH = 0;
+      this.errX = this.errZ = this.errH = this.errY = 0;
     } else {
       this.errX += dx;
       this.errZ += dz;
@@ -110,5 +112,6 @@ export class Predictor {
     this.errX *= f;
     this.errZ *= f;
     this.errH *= f;
+    this.errY *= f;
   }
 }

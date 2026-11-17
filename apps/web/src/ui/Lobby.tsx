@@ -127,7 +127,10 @@ export function Lobby() {
                       >
                         <span className="flex items-baseline justify-between gap-2">
                           <span className="font-black">{t.name}</span>
-                          <span className="text-xs font-bold text-white/55">{lengthKm} km lap</span>
+                          <span className="text-xs font-bold text-white/55">
+                            {t.difficulty ? `${t.difficulty} · ` : ""}
+                            {lengthKm} km lap
+                          </span>
                         </span>
                         <span className="mt-0.5 block text-xs font-normal text-white/60">{t.blurb}</span>
                       </button>

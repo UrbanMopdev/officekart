@@ -80,4 +80,23 @@ export const FLAG = {
   LEVEL_SHIFT: 3, // bits 3-4 hold the drift level (0-3)
   OFFROAD: 32,
   FINISHED: 64,
+  AIRBORNE: 128,
 } as const;
+
+/** Arcade gravity (m/s^2) for jumps, and how hard slopes pull on a kart. */
+export const GRAVITY = 34;
+export const SLOPE_PULL = 16;
+
+/**
+ * How each surface changes handling. Index matches SURFACE_TYPES:
+ * asphalt, dirt, mud, ice, snow, sand, boost.
+ */
+export const SURFACE_PHYSICS = [
+  { speed: 1, accel: 1, grip: 1, turn: 1 },
+  { speed: 0.88, accel: 0.85, grip: 0.55, turn: 1 },
+  { speed: 0.6, accel: 0.45, grip: 0.8, turn: 0.85 },
+  { speed: 1, accel: 0.55, grip: 0.16, turn: 0.8 },
+  { speed: 0.82, accel: 0.7, grip: 0.5, turn: 0.95 },
+  { speed: 0.8, accel: 0.55, grip: 0.9, turn: 0.9 },
+  { speed: 1, accel: 1, grip: 1, turn: 1 },
+] as const;

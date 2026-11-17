@@ -16,7 +16,37 @@ export interface BoostPadDef {
   length: number;
 }
 
-export type TrackTheme = "office" | "neon";
+export type TrackTheme = "office" | "neon" | "alpine";
+
+/** Road surfaces. The index is what the simulation stores. */
+export const SURFACE_TYPES = ["asphalt", "dirt", "mud", "ice", "snow", "sand", "boost"] as const;
+export type SurfaceType = (typeof SURFACE_TYPES)[number];
+
+/** A height key: at lap fraction `at` the road is `y` high. "linear" makes the stretch ending here a straight ramp. */
+export type ElevationKey = [at: number, y: number, mode?: "linear"];
+
+export interface SurfaceDef {
+  type: SurfaceType;
+  from: number;
+  to: number;
+  /** Lateral range it covers; omit for the full road width. Positive is right. */
+  lateral?: [number, number];
+}
+
+export interface GapDef {
+  /** The road is missing between these lap fractions: clear it in the air or fall. */
+  from: number;
+  to: number;
+  /** Where a kart that falls is put back (start of the run-up). */
+  respawn: number;
+}
+
+export interface OpenSideDef {
+  from: number;
+  to: number;
+  /** Which barrier is missing: -1 left, 1 right, 0 both. */
+  side: -1 | 0 | 1;
+}
 
 export interface TrackDef {
   id: string;
@@ -32,6 +62,22 @@ export interface TrackDef {
   checkpointCount: number;
   defaultLaps: number;
   boostPads: BoostPadDef[];
+  difficulty?: "Easy" | "Medium" | "Hard" | "Extreme";
+  /** Road height round the lap. Omit for a flat track. */
+  elevation?: ElevationKey[];
+  /** 0..1: how strongly corners are banked automatically. */
+  autoBank?: number;
+  surfaces?: SurfaceDef[];
+  gaps?: GapDef[];
+  openSides?: OpenSideDef[];
+}
+
+export interface SurfaceZone {
+  i0: number;
+  i1: number;
+  latMin: number;
+  latMax: number;
+  type: number;
 }
 
 export interface GridSlot {
@@ -67,6 +113,22 @@ export interface Track {
   checkpoints: number[];
   grid: GridSlot[];
   pads: BoostPad[];
+  /** Road height at each sample, and its slope in the driving direction (rise over run). */
+  hy: Float64Array;
+  slope: Float64Array;
+  /** Banking: height gained per metre to the right of the centreline. */
+  bankT: Float64Array;
+  /** 1 where the road is missing. */
+  gap: Uint8Array;
+  /** 1 where a kart must not be respawned (a gap or the run-up to one). */
+  unsafe: Uint8Array;
+  /** Where to respawn for each unsafe sample. */
+  respawnAt: Int32Array;
+  /** Missing barriers: bit 1 = left open, bit 2 = right open. */
+  open: Uint8Array;
+  zones: SurfaceZone[];
+  minY: number;
+  maxY: number;
 }
 
 export interface Located {
@@ -151,7 +213,72 @@ export function buildTrack(def: TrackDef, targetSpacing = 2): Track {
     checkpoints.push(Math.round((c * n) / def.checkpointCount) % n);
   }
 
-  const track: Track = { def, n, spacing, length, px, pz, tx, tz, nx, nz, checkpoints, grid: [], pads: [] };
+  // 4b. Height profile, slope, banking, gaps and open edges.
+  const hy = new Float64Array(n);
+  const keys = (def.elevation ?? []).slice().sort((a, b) => a[0] - b[0]);
+  if (keys.length > 0) {
+    for (let i = 0; i < n; i++) {
+      const u = i / n;
+      let k1 = keys.findIndex((k) => k[0] > u);
+      if (k1 < 0) k1 = 0;
+      const b = keys[k1];
+      const a = keys[(k1 - 1 + keys.length) % keys.length];
+      const a0 = a[0] > u ? a[0] - 1 : a[0];
+      const b0 = b[0] <= u ? b[0] + 1 : b[0];
+      let t = b0 > a0 ? (u - a0) / (b0 - a0) : 0;
+      if (b[2] !== "linear") t = t * t * (3 - 2 * t);
+      hy[i] = a[1] + (b[1] - a[1]) * t;
+    }
+  }
+  const slope = new Float64Array(n);
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    slope[i] = (hy[(i + 1) % n] - hy[(i - 1 + n) % n]) / (2 * spacing);
+    minY = Math.min(minY, hy[i]);
+    maxY = Math.max(maxY, hy[i]);
+  }
+  const bankT = new Float64Array(n);
+  if (def.autoBank) {
+    const raw = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = (i - 2 + n) % n;
+      const c = (i + 2) % n;
+      // Signed curvature: positive when the road bends right. Raise the outside edge.
+      const curve = ((tx[c] - tx[a]) * nx[i] + (tz[c] - tz[a]) * nz[i]) / (4 * spacing);
+      raw[i] = -Math.max(-0.3, Math.min(0.3, curve * 7.5)) * def.autoBank;
+    }
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let o = -8; o <= 8; o++) sum += raw[(i + o + n) % n];
+      bankT[i] = sum / 17;
+    }
+  }
+  const idxOf = (at: number) => ((Math.round(at * n) % n) + n) % n;
+  const gap = new Uint8Array(n);
+  const unsafe = new Uint8Array(n);
+  const respawnAt = new Int32Array(n);
+  for (const g of def.gaps ?? []) {
+    const r = idxOf(g.respawn);
+    for (let i = idxOf(g.from); i !== idxOf(g.to); i = (i + 1) % n) gap[i] = 1;
+    for (let i = (r + 1) % n; i !== (idxOf(g.to) + 3) % n; i = (i + 1) % n) {
+      unsafe[i] = 1;
+      respawnAt[i] = r;
+    }
+  }
+  const open = new Uint8Array(n);
+  for (const o of def.openSides ?? []) {
+    for (let i = idxOf(o.from); i !== idxOf(o.to); i = (i + 1) % n) open[i] |= o.side < 0 ? 1 : o.side > 0 ? 2 : 3;
+  }
+  const zones: SurfaceZone[] = (def.surfaces ?? []).map((z) => ({
+    i0: idxOf(z.from),
+    i1: idxOf(z.to),
+    latMin: z.lateral ? z.lateral[0] : -Infinity,
+    latMax: z.lateral ? z.lateral[1] : Infinity,
+    type: SURFACE_TYPES.indexOf(z.type),
+  }));
+
+  const track: Track = { def, n, spacing, length, px, pz, tx, tz, nx, nz, checkpoints, grid: [], pads: [], hy, slope, bankT, gap, unsafe, respawnAt, open, zones, minY, maxY };
 
   // 5. Starting grid for 12: two staggered columns behind the line.
   for (let slot = 0; slot < 12; slot++) {
@@ -234,4 +361,30 @@ export function onBoostPad(track: Track, idx: number, lateral: number): boolean 
     if (idx >= pad.i0 && idx <= pad.i1 && Math.abs(lateral - pad.lateral) <= pad.halfWidth) return true;
   }
   return false;
+}
+
+/** Surface index under a kart at (idx, lateral). 0 is plain asphalt. */
+export function surfaceAt(track: Track, idx: number, lateral: number): number {
+  for (const z of track.zones) {
+    const inside = z.i0 <= z.i1 ? idx >= z.i0 && idx <= z.i1 : idx >= z.i0 || idx <= z.i1;
+    if (inside && lateral >= z.latMin && lateral <= z.latMax) return z.type;
+  }
+  return 0;
+}
+
+/**
+ * Height of the road under a point described by `locate`. Returns -Infinity
+ * where there is no road: inside a gap, or beyond a missing barrier.
+ */
+export function groundHeight(track: Track, idx: number, along: number, lateral: number): number {
+  const { n, hy } = track;
+  if (track.gap[idx]) return -Infinity;
+  const o = track.open[idx];
+  if (o !== 0) {
+    const edge = track.def.wallHalfWidth + 0.4;
+    if ((lateral < -edge && (o & 1) !== 0) || (lateral > edge && (o & 2) !== 0)) return -Infinity;
+  }
+  const f = along / track.spacing;
+  const h = f >= 0 ? hy[idx] + (hy[(idx + 1) % n] - hy[idx]) * f : hy[idx] + (hy[idx] - hy[(idx - 1 + n) % n]) * f;
+  return h + lateral * track.bankT[idx];
 }
