@@ -10,11 +10,12 @@
  * Run it against the Railway URL to measure real network latency.
  */
 import { readFileSync } from "node:fs";
-import { MAX_PLAYERS, MSG, SNAPSHOT_EVERY, TICK_MS } from "@office-kart/shared";
+import { DEFAULT_TRACK_ID, MAX_PLAYERS, MSG, SNAPSHOT_EVERY, TICK_MS } from "@office-kart/shared";
 import { Bot, percentile, sleep } from "./bot";
 import { getServer } from "./spawn-server";
 
 const LAPS = Number(process.env.LAPS) || 3;
+const TRACK = process.env.TRACK || DEFAULT_TRACK_ID;
 
 function procCpuSeconds(pid: number): number | null {
   try {
@@ -49,7 +50,7 @@ async function main(): Promise<void> {
     console.log(`${overflow ? "PASS" : "FAIL"}  a 13th player is turned away`);
     ok &&= overflow;
 
-    bots[0].room.send(MSG.SETTINGS, { laps: LAPS });
+    bots[0].room.send(MSG.SETTINGS, { laps: LAPS, trackId: TRACK });
     for (const b of bots.slice(1)) b.room.send(MSG.READY, true);
     await bots[0].waitFor("all ready", () => bots[0].players.filter((p) => p.ready).length === MAX_PLAYERS - 1);
     bots[0].room.send(MSG.START);
@@ -70,7 +71,7 @@ async function main(): Promise<void> {
     }, 1000);
 
     const t0 = Date.now();
-    await Promise.all(bots.map((b) => b.waitFor("results", () => b.phase === "results", 240_000)));
+    await Promise.all(bots.map((b) => b.waitFor("results", () => b.phase === "results", 480_000)));
     clearInterval(sampler);
     const seconds = (Date.now() - t0) / 1000;
 
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
     const expectedGap = TICK_MS * SNAPSHOT_EVERY;
     const rate = bots.reduce((s, b) => s + b.snapshots, 0) / bots.length / seconds;
 
-    console.log(`\n12-player race, ${LAPS} laps, ${seconds.toFixed(0)} s`);
+    console.log(`\n12-player race on ${TRACK}, ${LAPS} laps, ${seconds.toFixed(0)} s`);
     console.log(`  finishers             ${finished} / ${MAX_PLAYERS}`);
     console.log(`  simulation tick       avg ${health.tick.avgMs} ms, max ${health.tick.maxMs} ms (budget ${TICK_MS.toFixed(1)} ms)`);
     if (cpuSamples.length) {

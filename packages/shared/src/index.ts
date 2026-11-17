@@ -5,12 +5,15 @@ export * from "./protocol";
 export * from "./names";
 export * from "./prediction";
 export { OFFICE_DASH } from "./tracks/officeDash";
+export { NEON_NIGHTS } from "./tracks/neonNights";
 
 import { buildTrack, type Track, type TrackDef } from "./track";
+import { NEON_NIGHTS } from "./tracks/neonNights";
 import { OFFICE_DASH } from "./tracks/officeDash";
 
 export const TRACK_DEFS: Record<string, TrackDef> = {
   [OFFICE_DASH.id]: OFFICE_DASH,
+  [NEON_NIGHTS.id]: NEON_NIGHTS,
 };
 
 export const DEFAULT_TRACK_ID = OFFICE_DASH.id;

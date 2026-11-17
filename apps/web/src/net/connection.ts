@@ -117,6 +117,39 @@ class Net {
 
   readonly predictor = new Predictor(getTrack(DEFAULT_TRACK_ID));
 
+  /** Offline track preview (?preview=track-id): supplies kart positions without a server. */
+  private preview: ((slot: number, out: KartSample) => boolean) | null = null;
+
+  startPreview(trackId: string, at: number): void {
+    const track = getTrack(trackId);
+    const players: PlayerView[] = ["You", "Priya", "Marcus", "Jo", "Sam", "Ines"].map((name, i) => ({
+      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0,
+    }));
+    useStore.getState().set({
+      status: "connected",
+      myId: "p0",
+      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players },
+    });
+    const t0 = performance.now();
+    const moving = new URLSearchParams(location.search).has("drive");
+    this.preview = (slot, out) => {
+      const travel = moving ? ((performance.now() - t0) / 1000) * 28 : 0;
+      const ahead = [0, 9, 15, 22, 31, 44][slot] ?? 0;
+      const f = (((at * track.n + ahead + travel / track.spacing) % track.n) + track.n) % track.n;
+      const i = Math.floor(f);
+      const j = (i + 1) % track.n;
+      const k = f - i;
+      const lat = [0, 3.4, -3.2, 1.2, -4.2, 4.4][slot] ?? 0;
+      out.x = track.px[i] + (track.px[j] - track.px[i]) * k + track.nx[i] * lat;
+      out.z = track.pz[i] + (track.pz[j] - track.pz[i]) * k + track.nz[i] * lat;
+      out.heading = Math.atan2(track.tx[i], track.tz[i]) + (slot === 1 ? -0.1 : 0);
+      out.speed = 28;
+      // A drifting kart with sparks, a boosting kart, and the rest cruising.
+      out.flags = slot === 1 ? 2 | (2 << 3) : slot === 2 ? 4 : slot === 4 ? 1 | (3 << 3) : 0;
+      return true;
+    };
+  }
+
   // ------------------------------------------------------------- connecting
 
   async create(name: string): Promise<boolean> {
@@ -212,7 +245,7 @@ class Net {
     let pings = 0;
     const ping = () => {
       // A silent socket means the connection is dead even if the browser has not noticed.
-      if (performance.now() - this.lastHeardAt > 8000) {
+      if (performance.now() - this.lastHeardAt > 15000) {
         room.connection.close();
         return;
       }
@@ -358,6 +391,7 @@ class Net {
 
   /** Interpolated state of any kart from the snapshot buffer. Returns false if unknown. */
   sampleKart(slot: number, out: KartSample): boolean {
+    if (this.preview) return this.preview(slot, out);
     const snaps = this.snaps;
     if (snaps.length === 0) return false;
     const rt = this.serverNow() - INTERP_MS;

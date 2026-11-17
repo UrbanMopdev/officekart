@@ -48,8 +48,11 @@ export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 export class Bot {
   readonly client: Client;
   room!: Room;
-  readonly track = getTrack(DEFAULT_TRACK_ID);
-  readonly predictor = new Predictor(this.track);
+  readonly predictor = new Predictor(getTrack(DEFAULT_TRACK_ID));
+  /** The track of the current race (follows the lobby's selection). */
+  get track() {
+    return this.predictor.track;
+  }
   notices: Notice[] = [];
   rtts: number[] = [];
   /** serverTime - localTime, from the lowest-latency ping. */
@@ -169,7 +172,7 @@ export class Bot {
     const phase = this.phase;
     if (phase !== this.lastPhase) {
       if (phase === "countdown") {
-        this.predictor.reset();
+        this.predictor.reset(getTrack(this.room.state.trackId));
         this.selfTrace = [];
         this.maxServerSpeed = 0;
       }

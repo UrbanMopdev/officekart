@@ -3,25 +3,58 @@
 Browser-based 3D kart racing for 2–12 coworkers. Open a link, type a nickname, race.
 
 This repository currently contains **Phase 1** of the specification: a complete online
-multiplayer race on the first track, Office Dash, with a server-authoritative simulation.
-Phases 2–4 (power-ups, more tracks and modes, persistent stats, polish) build on it.
+multiplayer race with a server-authoritative simulation, on two long circuits. Phases 2–4
+(power-ups, more tracks and modes, persistent stats, polish) build on it.
 
 ## What works today
 
 - Private lobbies with a six-character code and a shareable invite link (`/r/ABC123`)
-- 2–12 human racers per lobby, guest nicknames, kart colour selection, ready-up, host settings (laps)
+- 2–12 human racers per lobby, guest nicknames, kart colour selection, ready-up, host settings (track, laps)
+- Two circuits: **Office Dash** (1.9 km, about a minute a lap) and **Neon Nights** (2.5 km, about 80 seconds)
 - Server-authoritative racing at 30 Hz: the server simulates every kart from player inputs
 - Client-side prediction with server reconciliation for your own kart; interpolation for everyone else's
 - Arcade handling: speed-sensitive steering, drifting with three mini-turbo levels, boost pads,
   off-road slowdown, wall and kart-to-kart collisions, kart reset
-- Synchronised countdown, ordered checkpoints, lap counting, live positions, finish order, results, rematch
+- Synchronised countdown with start lights, ordered checkpoints, lap counting, live positions, finish
+  order, results, rematch
 - Disconnect handling: a dropped player's seat is held for 30 seconds and they rejoin the same race
   (including after a page refresh); the host role passes on if the host leaves
 - HUD: position, lap, timer, speed, drift charge, mini-map, live standings, latency indicator
 - Rate limiting, input validation, origin checks, `/health`, structured logs, graceful shutdown
 
-Not built yet: power-ups, the other four tracks, Grand Prix / Team Battle / Time Trial, characters and
+Not built yet: power-ups, the other three tracks, Grand Prix / Team Battle / Time Trial, characters and
 kart classes, audio, gamepad support, PostgreSQL-backed profiles and leaderboards.
+
+## Graphics
+
+Everything on screen is generated in code; the game ships no model or image files.
+
+- Physically based materials, a shadow-casting key light that follows the action, and image-based
+  reflections on paint, metal and glass
+- HDR rendering with bloom, ambient occlusion, vignette and filmic tone mapping
+- A detailed kart: clear-coat paint, spinning and steering wheels, body roll and squat, a driver with
+  helmet and visor, tail lights, exhaust flames
+- Particles for drift sparks (coloured by charge level), tyre smoke, run-off dust and boost exhaust
+- Track dressing: raised kerbs, swept barriers with light strips, start gantry with countdown lights,
+  animated boost pads, chevron boards on the outside of tight corners
+- **Office Dash**: a full room with windows, ceiling lights and a whiteboard, wooden floor and rugs,
+  desks tall enough to race under, and several hundred props (mugs, books, laptops, plants, lamps,
+  chairs, filing cabinets)
+- **Neon Nights**: an elevated skyway over a city at night, with lit towers, light arches, glowing
+  rails, stars and a moon
+
+Static scenery is merged into a few dozen meshes per track, split by map cell so off-screen areas are
+skipped. Three quality levels are selectable in the lobby:
+
+| Level | Shadows | Ambient occlusion | Bloom and tone mapping | Resolution scale |
+|---|---|---|---|---|
+| High | 2048 px | yes | yes | up to 1.75x |
+| Medium | 1024 px | no | yes | up to 1.25x |
+| Low | blob shadows | no | no | 1x |
+
+The game starts on High and steps down by itself if the frame rate cannot hold, unless the player has
+picked a level by hand. To look at a track without a server, open `/?preview=office-dash` or
+`/?preview=neon-nights` (add `&at=0.5` to move round the lap, `&q=low` to pick a quality level).
 
 ## Repository layout
 
@@ -57,6 +90,7 @@ npm run build        # the tests run against the built server
 npm run test:track   # track geometry sanity checks
 npm run test:race    # 29 end-to-end checks through real network clients
 npm run test:load    # 12-client race with CPU, memory, tick and latency figures
+                     # (TRACK=neon-nights LAPS=2 to change circuit and distance)
 ```
 
 `test:race` and `test:load` accept `SERVER_URL` to target a deployed server:
@@ -162,7 +196,8 @@ network). Migrations will run as a pre-deploy command.
 - **Monitoring.** `/health` reports uptime, lobby count, memory, and average and worst simulation tick time.
   Logs are JSON lines: filter on `msg` (`race_finished`, `room_error`, `client_kicked_rate_limit`, ...).
 - **Capacity.** A full 12-kart race uses about 0.2 ms of each 33 ms tick and a few percent of one core
-  locally, so the suggested 1 vCPU / 1 GB allocation leaves a lot of headroom.
+  locally, so the suggested 1 vCPU / 1 GB allocation leaves a lot of headroom. Graphics cost nothing on
+  the server: all rendering happens in each player's browser.
 
 ## How the netcode works
 

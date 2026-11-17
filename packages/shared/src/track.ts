@@ -16,9 +16,15 @@ export interface BoostPadDef {
   length: number;
 }
 
+export type TrackTheme = "office" | "neon";
+
 export interface TrackDef {
   id: string;
   name: string;
+  /** Which environment the client builds around the circuit. */
+  theme: TrackTheme;
+  /** One-line description shown in the lobby. */
+  blurb: string;
   /** Closed loop of centreline control points [x, z], in driving order. */
   controlPoints: [number, number][];
   roadHalfWidth: number;

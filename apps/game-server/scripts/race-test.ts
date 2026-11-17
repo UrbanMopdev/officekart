@@ -102,7 +102,7 @@ async function main(): Promise<void> {
     quitter.closed = true;
     check("the race carries on for everyone else", host.phase === "racing");
 
-    await Promise.all([host, b, c, cheat].map((x) => x.waitFor("results", () => x.phase === "results", 150_000)));
+    await Promise.all([host, b, c, cheat].map((x) => x.waitFor("results", () => x.phase === "results", 240_000)));
     const view = host.players.filter((p) => p.racing).sort((x, y) => x.place - y.place);
     console.log(view.map((p) => `   ${p.place}. ${p.name.padEnd(6)} ${p.finished ? (p.finishMs / 1000).toFixed(2) + " s" : "DNF"}  best lap ${(p.bestLapMs / 1000).toFixed(2)} s`).join("\n"));
     check("every remaining racer finished", view.length === 4 && view.every((p) => p.finished));
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
     host.room.send(MSG.REMATCH);
     await Promise.all([host, b, c, cheat].map((x) => x.waitFor("rematch countdown", () => x.phase === "countdown", 5000)));
     check("rematch starts in the same lobby", host.room.roomId === code && host.room.state.raceNumber === 2);
-    await Promise.all([host, b, c, cheat].map((x) => x.waitFor("results 2", () => x.phase === "results", 150_000)));
+    await Promise.all([host, b, c, cheat].map((x) => x.waitFor("results 2", () => x.phase === "results", 240_000)));
     check("second race completes", host.players.filter((p) => p.racing && p.finished).length === 4);
     const fair = cheat.me?.finishMs ?? 0;
     check("flooding was no faster than the same kart playing fair", lapCheat > fair - 750, `flooding ${(lapCheat / 1000).toFixed(2)} s, fair ${(fair / 1000).toFixed(2)} s`);

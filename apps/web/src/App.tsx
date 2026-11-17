@@ -23,6 +23,14 @@ export function App() {
 
   // After a refresh, try to take back the seat we were holding.
   useEffect(() => {
+    // ?preview=<track-id> renders a track offline, with no server (for checking visuals).
+    const params = new URLSearchParams(location.search);
+    const preview = params.get("preview");
+    if (preview) {
+      net.startPreview(preview, Number(params.get("at")) || 0);
+      setBooting(false);
+      return;
+    }
     let alive = true;
     void net.resume().finally(() => alive && setBooting(false));
     return () => {
@@ -33,7 +41,7 @@ export function App() {
   // Keep the address bar pointing at the lobby so it can be shared or refreshed.
   const code = room?.code;
   useEffect(() => {
-    if (code) {
+    if (code && code !== "PREVIEW") {
       if (location.pathname !== `/r/${code}`) history.replaceState(null, "", `/r/${code}`);
       setInviteCode(code);
     }

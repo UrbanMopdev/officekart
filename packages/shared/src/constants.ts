@@ -16,14 +16,14 @@ export const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export const COUNTDOWN_MS = 4000;
 /** Once the first racer finishes, everyone else has this long to finish. */
-export const FINISH_GRACE_MS = 30_000;
+export const FINISH_GRACE_MS = 45_000;
 /** Hard cap on a single race. */
-export const MAX_RACE_MS = 10 * 60_000;
+export const MAX_RACE_MS = 20 * 60_000;
 /** How long a dropped player's seat is held for reconnection. */
 export const RECONNECT_SECONDS = 30;
 
 export const MIN_LAPS = 1;
-export const MAX_LAPS = 7;
+export const MAX_LAPS = 5;
 
 export const NAME_MAX_LENGTH = 16;
 

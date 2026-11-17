@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { KART_COLORS, MAX_LAPS, MAX_PLAYERS, MIN_LAPS, MSG, TRACK_DEFS } from "@office-kart/shared";
+import { KART_COLORS, MAX_LAPS, MAX_PLAYERS, MIN_LAPS, MSG, TRACK_DEFS, getTrack } from "@office-kart/shared";
 import { net } from "../net/connection";
-import { useMe, useStore } from "../store";
+import { useMe, useStore, type Quality } from "../store";
 import { Button, Panel } from "./common";
 
 export function Lobby() {
@@ -9,6 +9,8 @@ export function Lobby() {
   const myId = useStore((s) => s.myId);
   const me = useMe();
   const [copied, setCopied] = useState<"idle" | "copied" | "manual">("idle");
+  const quality = useStore((s) => s.quality);
+  const setQuality = useStore((s) => s.setQuality);
   const isHost = room.hostId === myId;
   const link = `${location.origin}/r/${room.code}`;
   const others = room.players.filter((p) => p.connected && p.id !== room.hostId);
@@ -108,9 +110,30 @@ export function Lobby() {
                 <dt className="text-white/60">Mode</dt>
                 <dd className="font-bold">Quick Race</dd>
               </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-white/60">Track</dt>
-                <dd className="font-bold">{TRACK_DEFS[room.trackId]?.name ?? room.trackId}</dd>
+              <div>
+                <dt className="mb-1.5 text-white/60">Track</dt>
+                <dd className="grid gap-2">
+                  {Object.values(TRACK_DEFS).map((t) => {
+                    const selected = t.id === room.trackId;
+                    const lengthKm = (getTrack(t.id).length / 1000).toFixed(1);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        disabled={!isHost}
+                        aria-pressed={selected}
+                        onClick={() => net.send(MSG.SETTINGS, { trackId: t.id })}
+                        className={`rounded-2xl border-2 px-3 py-2 text-left transition ${selected ? "border-amber-400 bg-amber-400/15" : "border-white/10 bg-white/5"} ${isHost && !selected ? "hover:border-white/40" : ""} ${!isHost && !selected ? "opacity-45" : ""}`}
+                      >
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span className="font-black">{t.name}</span>
+                          <span className="text-xs font-bold text-white/55">{lengthKm} km lap</span>
+                        </span>
+                        <span className="mt-0.5 block text-xs font-normal text-white/60">{t.blurb}</span>
+                      </button>
+                    );
+                  })}
+                </dd>
               </div>
               <div className="flex items-center justify-between">
                 <dt className="text-white/60">Laps</dt>
@@ -130,6 +153,26 @@ export function Lobby() {
               </div>
             </dl>
             {!isHost && <p className="mt-3 text-xs text-white/45">{hostName} picks the settings and starts the race.</p>}
+          </Panel>
+
+          <Panel>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-black">Graphics</h2>
+              <div className="flex rounded-xl bg-white/10 p-1" role="group" aria-label="Graphics quality">
+                {(["high", "medium", "low"] as Quality[]).map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    aria-pressed={quality === q}
+                    onClick={() => setQuality(q, true)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-bold capitalize transition ${quality === q ? "bg-amber-400 text-slate-900" : "text-white/70 hover:text-white"}`}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-white/45">High adds soft shadows, ambient occlusion and bloom. Drop to Medium or Low if the race feels choppy.</p>
           </Panel>
 
           <div className="flex gap-3">
