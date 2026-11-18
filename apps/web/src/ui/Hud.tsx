@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EVENT_INFO, ITEMS, KART_COLORS, TICK_RATE, formatRaceTime, getTrack, ordinal } from "@office-kart/shared";
+import { EVENT_INFO, ITEMS, KART_COLORS, MSG, TICK_RATE, formatRaceTime, getTrack, ordinal } from "@office-kart/shared";
 import { kartActive, kartPos } from "../game/shared";
 import { net } from "../net/connection";
 import { useMe, useStore } from "../store";
@@ -175,6 +175,17 @@ export function Hud() {
   const watching = spectating || !!me?.finished;
   const compact = useStore((s) => s.touch);
   const ghostMs = useStore((s) => s.ghostMs);
+  const champion = useStore((s) => s.champion);
+  const trial = room.trial;
+  // Time trial: T throws the run away and lines up again.
+  useEffect(() => {
+    if (!trial) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyT" && !e.repeat) net.send(MSG.RESTART);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [trial]);
   const shown = compact ? racers.filter((p, i) => i < 3 || p.id === myId) : racers;
 
   return (
@@ -183,7 +194,7 @@ export function Hud() {
       {!spectating && <SpeedLines />}
       {!spectating && <Callouts />}
       {room.phase === "countdown" && !spectating && <RocketHint touchUi={compact} />}
-      {!compact && !spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} />}
+      {!compact && !trial && !spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} />}
       <EventBanner />
       {watching && racers.length > 1 && (
         <div className="absolute inset-x-0 bottom-24 text-center">
@@ -221,13 +232,23 @@ export function Hud() {
       <div className="absolute left-1/2 top-4 -translate-x-1/2 text-center">
         <RaceTimer startAt={room.raceStartAt} frozenMs={me?.finished ? me.finishMs : 0} />
         {me && me.bestLapMs > 0 && <div className="text-outline text-sm font-bold text-white/85">Best lap {formatRaceTime(me.bestLapMs)}</div>}
-        {ghostMs > 0 && !me?.finished && <div className="text-outline text-xs font-bold text-cyan-200 tall:text-sm">Ghost to beat: {formatRaceTime(ghostMs)}</div>}
+        {champion && !me?.finished && (
+          <div className="text-outline text-xs font-bold text-amber-200 tall:text-sm">
+            👑 {champion.mine ? "Your record" : champion.name}: {formatRaceTime(champion.ms)}
+          </div>
+        )}
+        {ghostMs > 0 && !me?.finished && <div className="text-outline text-xs font-bold text-cyan-200 tall:text-sm">{room.trial ? "Your best" : "Ghost to beat"}: {formatRaceTime(ghostMs)}</div>}
       </div>
 
       {/* Standings */}
       <div className="absolute right-4 top-4 flex w-36 flex-col items-end gap-1 tall:w-52 tall:gap-2" style={{ right: "max(1rem, env(safe-area-inset-right))" }}>
         <PingBadge />
-        <ol className="w-full space-y-1">
+        {trial && !me?.finished && (
+          <button type="button" onClick={() => net.send(MSG.RESTART)} className="pointer-events-auto rounded-full bg-slate-900/70 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800">
+            ↺ Restart run{compact ? "" : " (T)"}
+          </button>
+        )}
+        <ol className={`w-full space-y-1 ${trial ? "hidden" : ""}`}>
           {shown.map((p) => (
             <li key={p.id} className={`flex items-center gap-2 rounded-xl px-2 py-0.5 text-xs font-bold tall:px-2.5 tall:py-1 tall:text-sm ${p.id === myId ? "bg-amber-400 text-slate-900" : "bg-slate-900/60"} ${p.connected ? "" : "opacity-50"}`}>
               <span className="w-4 text-right tabular-nums">{p.place}</span>

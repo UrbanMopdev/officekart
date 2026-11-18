@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { KART_COLORS, MSG, POINTS, formatRaceTime, ordinal } from "@office-kart/shared";
 import { net } from "../net/connection";
 import { useMe, useStore } from "../store";
+import { TrialResults } from "./TrialResults";
 import { Button, Panel } from "./common";
 
 const MEDALS = ["bg-amber-400 text-slate-900", "bg-slate-300 text-slate-900", "bg-orange-400 text-slate-900"];
@@ -44,6 +45,7 @@ export function Results() {
   const note = personalBest ? "New personal best!" : me?.note;
   const standings = [...room.players].sort((a, b) => b.points - a.points);
   const tally = (v: string) => room.players.filter((p) => p.vote === v).length;
+  if (room.trial) return <TrialResults />;
 
   return (
     <div className="absolute inset-0 overflow-y-auto bg-slate-950/55 p-4">

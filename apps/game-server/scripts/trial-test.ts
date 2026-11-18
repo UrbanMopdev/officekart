@@ -80,6 +80,7 @@ async function main(): Promise<void> {
   const b = new Bot(server.url, { name: "Gatecrasher" });
   const json = async (path: string) => (await fetch(`${server.httpUrl}${path}`)).json() as Promise<Record<string, any>>;
   try {
+    console.log(`score store: ${(await json("/health")).scores}`);
     const code = await a.create();
     const st = a.room.state;
     await a.waitFor("room state", () => st.trial === true, 3000).catch(() => {});

@@ -171,6 +171,15 @@ class Net {
       myId: "p0",
       room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players, chaos: 0, speed: 0, trial: false, weekly: false, eventId: 0, eventFrom: 0, eventTo: 0, hzOff: 0, voteEndsAt: 0, awards: [] },
     });
+    // ?results=trial shows the time-trial results screen with sample numbers, to check its layout.
+    if (new URLSearchParams(location.search).get("results") === "trial") {
+      const room = useStore.getState().room!;
+      const me = { ...players[0], finished: true, finishMs: 98_833, bestLapMs: 32_000, place: 1 };
+      useStore.getState().set({
+        room: { ...room, phase: "results", trial: true, speed: 3, players: [me] },
+        trialResult: { raceMs: 98_833, lapMs: 32_000, rank: 2, weekRank: 1, previousMs: 99_950, improved: true, recordMs: 97_410, recordName: "Priya", saved: true },
+      });
+    }
     const t0 = performance.now();
     this.previewStart = t0;
     const moving = new URLSearchParams(location.search).has("drive");

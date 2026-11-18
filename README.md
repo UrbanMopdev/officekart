@@ -84,6 +84,24 @@ turbos, slipstreams, overtakes and the final lap.
 class drives with you. It is your own recorded driving, stored in the browser. It is not a
 computer-controlled racer and nobody else sees it.
 
+**Time trials and leaderboards.** From the front page: *Race the challenge* (this week's track, the same
+for everyone, Monday to Sunday Eastern) or *Time trial* (any track and speed class). A trial is solo,
+three laps, with no power-ups and no chaos events. The server times the run and records the kart's path;
+when it ends the best race time and best lap go on the all-time and this-week boards for that track and
+speed class, and the fastest run on the board is replayed as a ghost in the record holder's vehicle. Your
+own best is kept as a second ghost. `T` restarts a run. Leaderboard entries belong to a random id kept in
+the browser, so a player keeps their entry across sessions on the same device; there are no accounts.
+
+**Vehicles and drivers.** Five vehicles with different top speed, acceleration, handling, drift and
+weight (Go-Kart, Scooter, Hot Rod, Forklift, Drifter), and ten cosmetic driver looks. The vehicle is part
+of the shared simulation; weight decides who gives way in a collision.
+
+**Drifting.** A drift follows an arc of fixed radius at any speed (19 m steering into it, 44 m with the
+stick centred, 120 m steering against it), so it corners the same in every speed class. The tail steps
+out the moment the button goes down, braking in a drift trims speed without ending it, and on release
+the slide snaps straight so the turbo fires where the nose points. Turbo levels charge after 0.55, 1.3
+and 2.2 s.
+
 ### Not built, or simplified
 
 - Split paths, alternate routes and hidden shortcuts. Every track has one racing line, so there is no
@@ -104,6 +122,7 @@ npm run test:physics -w @office-kart/game-server      # a full lap of every trac
 npm run test:race                                    # 29 network checks
 npm run test:speed -w @office-kart/game-server        # every track lapped at every speed class
 npm run test:fun -w @office-kart/game-server          # tricks, rocket starts, slipstream, speed classes
+npm run test:trial -w @office-kart/game-server        # vehicles, drifting, time trials, leaderboard API
 CHAOS_EVENTS=on CHAOS=2 TRACK=chaos-dimension LAPS=1 npm run test:load   # 12 clients, items, mayhem
 ```
 
@@ -251,9 +270,12 @@ paths change. Deploying the game server ends any race in progress, so deploy bet
 
 ### PostgreSQL
 
-Phase 1 stores nothing, so no database is required yet. When Phase 3 lands: **New → Database →
-PostgreSQL**, then on `game-server` set `DATABASE_URL` to `${{Postgres.DATABASE_URL}}` (Railway's private
-network). Migrations will run as a pre-deploy command.
+Time-trial leaderboards are stored in PostgreSQL. **New → Database → PostgreSQL**, then on `game-server`
+set `DATABASE_URL` to `${{Postgres.DATABASE_URL}}` (Railway's private network). The server creates its one
+table (`trial_best`) on start. The database URL exists only on the server and is never sent to the browser.
+
+Without `DATABASE_URL`, or if the database cannot be reached, the game still runs and leaderboards are
+kept in memory until the next restart. `/health` reports which one is in use (`"scores": "postgres"`).
 
 ## Environment variables
 
@@ -265,7 +287,7 @@ network). Migrations will run as a pre-deploy command.
 | game-server | `PORT` | Port to listen on. Binds `0.0.0.0`. |
 | game-server | `NODE_ENV` | `production` in Railway. |
 | game-server | `ALLOWED_ORIGINS` | Comma-separated browser origins allowed to connect. Empty allows any origin (development only). |
-| game-server | `DATABASE_URL` | Unused until Phase 3. |
+| game-server | `DATABASE_URL` | PostgreSQL connection for time-trial leaderboards. Optional: without it scores are kept in memory only. |
 | game-server | `MAX_ROOMS` | Optional. Concurrent lobby cap, default 100. |
 | game-server | `MATCHMAKE_PER_MINUTE` | Optional. Create/join requests allowed per IP per minute, default 90. |
 | game-server | `LOG_LEVEL` | Optional. `debug` for verbose logs. |

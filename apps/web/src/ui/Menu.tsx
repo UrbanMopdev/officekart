@@ -3,6 +3,7 @@ import { CODE_LENGTH, NAME_MAX_LENGTH, normalizeCode, sanitizeName } from "@offi
 import { net } from "../net/connection";
 import { useStore } from "../store";
 import { Button, CONTROLS, Kbd, Panel } from "./common";
+import { LeaderboardBrowser, WeeklyCard } from "./Leaderboard";
 
 export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null; onClearInvite(): void }) {
   const name = useStore((s) => s.name);
@@ -12,6 +13,7 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
   const touchUi = useStore((s) => s.touch);
   const [code, setCode] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const [boards, setBoards] = useState(false);
   const busy = status === "connecting";
 
   const validName = (): string | null => {
@@ -27,6 +29,12 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
   const create = () => {
     const n = validName();
     if (n) void net.create(n);
+  };
+
+  /** Solo against the clock: this week's challenge, or any track. */
+  const trial = (weekly: boolean) => {
+    const n = validName();
+    if (n) void net.create(n, weekly ? { weekly: true } : { trial: true });
   };
 
   const join = (raw: string) => {
@@ -120,6 +128,9 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
             )}
           </form>
         </Panel>
+
+        {!inviteCode && <WeeklyCard busy={busy} onRace={() => trial(true)} onTrial={() => trial(false)} onBoards={() => setBoards(true)} />}
+        {boards && <LeaderboardBrowser onClose={() => setBoards(false)} />}
 
         {touchUi && <p className="mt-5 text-center text-xs text-indigo-200">Touch controls appear when the race starts. Hold your phone sideways.</p>}
         <div className={`mt-5 flex-wrap justify-center gap-x-4 gap-y-2 text-xs text-indigo-200 ${touchUi ? "hidden" : "flex"}`}>

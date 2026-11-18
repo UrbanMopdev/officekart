@@ -8,7 +8,8 @@ import { useStore, type Quality } from "../store";
 import { EXHAUST, KartVisual, REAR_LEFT, REAR_RIGHT } from "./kartVisual";
 import { ParticleSystem } from "./particles";
 import { feel, kartActive, kartPos } from "./shared";
-import { GhostRecorder, loadGhost, sampleGhost, type Ghost } from "./ghost";
+import { GhostRecorder, decodeGhost, loadGhost, sampleGhost, type Ghost } from "./ghost";
+import { fetchGhost } from "../net/api";
 import { Hazards } from "./Hazards";
 import { TerrainTheme } from "./themes/TerrainTheme";
 import { NeonTheme } from "./themes/NeonTheme";
@@ -63,7 +64,7 @@ export function World({ quality }: { quality: Quality }) {
   const fillA = useRef<THREE.PointLight>(null);
   const fillB = useRef<THREE.PointLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
-  const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false });
+  const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean ; champ: Ghost | null; champVisual: KartVisual | null; champLook: { name: string; color: number; vehicle: number; avatar: number } | null }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, champ: null, champVisual: null, champLook: null });
   const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0 });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
@@ -137,6 +138,8 @@ export function World({ quality }: { quality: Quality }) {
       map.clear();
       ghost.current.visual?.dispose();
       ghost.current.visual = null;
+      ghost.current.champVisual?.dispose();
+      ghost.current.champVisual = null;
     };
   }, []);
 
@@ -356,6 +359,25 @@ export function World({ quality }: { quality: Quality }) {
         g.saved = false;
         g.best = me?.racing && room.players.filter((p) => p.racing).length === 1 ? loadGhost(room.trackId, room.laps, room.speed) : null;
         if (store.ghostMs !== (g.best?.ms ?? 0)) store.set({ ghostMs: g.best?.ms ?? 0 });
+        // Time trial: fetch the record holder's run to race against (this week's leader in the weekly challenge).
+        g.champ = null;
+        g.champLook = null;
+        if (store.champion) store.set({ champion: null });
+        if (room.trial) {
+          const race = room.raceNumber;
+          const { trackId, speed, weekly } = room;
+          void (async () => {
+            const data = (weekly ? await fetchGhost(trackId, speed, "week") : null) ?? (await fetchGhost(trackId, speed, "all"));
+            const run = data ? decodeGhost(data.ms, data.d) : null;
+            if (!data || !run || ghost.current.race !== race) return;
+            const mine = data.pid === useStore.getState().pid;
+            ghost.current.champ = run;
+            ghost.current.champLook = { name: mine ? "Your record" : `👑 ${data.name}`, color: data.color, vehicle: data.vehicle, avatar: data.avatar };
+            // When the record is yours, one ghost is enough.
+            if (mine) ghost.current.best = null;
+            useStore.getState().set({ champion: { name: data.name, ms: data.ms, mine }, ...(mine ? { ghostMs: 0 } : {}) });
+          })();
+        }
       }
       if (driving) {
         const k = net.predictor.state;
@@ -379,6 +401,7 @@ export function World({ quality }: { quality: Quality }) {
           }
           // Its name tag would fill the screen when it is right beside the camera.
           g.visual.setIdentity("Your best", me?.color ?? 0, gdx * gdx + gdz * gdz > 110);
+          g.visual.setStyle(me?.vehicle ?? 0, me?.avatar ?? 0);
           g.visual.update(probe.x, probe.y, probe.z, probe.heading, probe.speed, 0, 0, 0, dt, time, FX.PHANTOM);
         }
       }
@@ -387,6 +410,29 @@ export function World({ quality }: { quality: Quality }) {
         group.remove(g.visual.group);
         g.visual.dispose();
         g.visual = null;
+      }
+      // The record holder's ghost, in their own vehicle and colours.
+      let showChamp = false;
+      if (inRace && g.champ && g.champLook && room.phase === "racing" && sampleGhost(g.champ, net.serverNow() - room.raceStartAt, probe)) {
+        const cdx = probe.x - camera.position.x;
+        const cdz = probe.z - camera.position.z;
+        showChamp = cdx * cdx + cdz * cdz > 9;
+        if (showChamp) {
+          if (!g.champVisual) {
+            g.champVisual = new KartVisual();
+            g.champVisual.setLook({ shadows: false, underglow: false });
+            group.add(g.champVisual.group);
+          }
+          g.champVisual.setIdentity(g.champLook.name, g.champLook.color, cdx * cdx + cdz * cdz > 110);
+          g.champVisual.setStyle(g.champLook.vehicle, g.champLook.avatar);
+          g.champVisual.update(probe.x, probe.y, probe.z, probe.heading, probe.speed, 0, 0, 0, dt, time, FX.PHANTOM);
+        }
+      }
+      if (g.champVisual) g.champVisual.group.visible = showChamp;
+      if (!inRace && g.champVisual) {
+        group.remove(g.champVisual.group);
+        g.champVisual.dispose();
+        g.champVisual = null;
       }
     }
 
