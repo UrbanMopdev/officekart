@@ -174,22 +174,26 @@ class Net {
     const t0 = performance.now();
     this.previewStart = t0;
     const moving = new URLSearchParams(location.search).has("drive");
+    const lineup = new URLSearchParams(location.search).has("lineup");
+    const firstAvatar = Number(new URLSearchParams(location.search).get("avatars")) || 0;
+    if (firstAvatar) for (const p of players) p.avatar = (p.avatar + firstAvatar) % 10;
     this.preview = (slot, out) => {
       const travel = moving ? ((performance.now() - t0) / 1000) * 28 : 0;
-      const ahead = [0, 9, 15, 22, 31, 44][slot] ?? 0;
+      // ?lineup parks the karts in a row just ahead of the camera, to look at the models.
+      const ahead = lineup ? [0, 2.4, 2.4, 2.4, 4.6, 4.6][slot] : ([0, 9, 15, 22, 31, 44][slot] ?? 0);
       const f = (((at * track.n + ahead + travel / track.spacing) % track.n) + track.n) % track.n;
       const i = Math.floor(f);
       const j = (i + 1) % track.n;
       const k = f - i;
-      const lat = [0, 3.4, -3.2, 1.2, -4.2, 4.4][slot] ?? 0;
+      const lat = lineup ? [0, -4.2, 0, 4.2, -2.6, 2.6][slot] : ([0, 3.4, -3.2, 1.2, -4.2, 4.4][slot] ?? 0);
       out.x = track.px[i] + (track.px[j] - track.px[i]) * k + track.nx[i] * lat;
       out.z = track.pz[i] + (track.pz[j] - track.pz[i]) * k + track.nz[i] * lat;
       out.y = track.hy[i] + (track.hy[j] - track.hy[i]) * k + lat * track.bankT[i];
-      out.heading = Math.atan2(track.tx[i], track.tz[i]) + (slot === 1 ? -0.1 : 0);
-      out.speed = 28;
+      out.heading = Math.atan2(track.tx[i], track.tz[i]) + (lineup ? (slot === 0 ? 0 : 2.5) : slot === 1 ? -0.1 : 0);
+      out.speed = lineup ? 0 : 28;
       // A drifting kart with sparks, a boosting kart, and the rest cruising.
-      out.flags = slot === 1 ? 2 | (2 << 3) : slot === 2 ? 4 : slot === 4 ? 1 | (3 << 3) : 0;
-      out.fx = slot === 3 ? 2 : out.y < track.waterLevel - 0.8 ? 64 : 0;
+      out.flags = lineup ? 0 : slot === 1 ? 2 | (2 << 3) : slot === 2 ? 4 : slot === 4 ? 1 | (3 << 3) : 0;
+      out.fx = lineup ? 0 : slot === 3 ? 2 : out.y < track.waterLevel - 0.8 ? 64 : 0;
       return true;
     };
   }

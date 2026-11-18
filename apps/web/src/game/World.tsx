@@ -236,6 +236,7 @@ export function World({ quality }: { quality: Quality }) {
       const cdz = sample.z - camera.position.z;
       const camDist2 = cdx * cdx + cdz * cdz;
       v.setIdentity(p.name, p.color, !mine && camDist2 > 110);
+      v.setStyle(p.vehicle, p.avatar);
       // Tilt the kart to the road under it: slope ahead gives pitch, banking gives roll.
       locate(track, sample.x, sample.z, v.hint, loc);
       v.hint = loc.idx;

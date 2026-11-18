@@ -10,6 +10,8 @@ import { bake, compose, type PartOptions } from "./builder";
 import { glowTexture, labelTexture } from "./textures";
 
 interface Shared {
+  cockpit: THREE.BufferGeometry;
+  headMat: THREE.Material;
   paint: THREE.BufferGeometry;
   accent: THREE.BufferGeometry;
   dark: THREE.BufferGeometry;
@@ -79,20 +81,23 @@ function buildShared(): Shared {
     .rbox(0.22, 0.05, 1.6, 0.02, 0, 0.642, 1.0)
     .rbox(0.1, 0.05, 1.2, 0.02, -0.74, 0.705, -0.1)
     .rbox(0.1, 0.05, 1.2, 0.02, 0.74, 0.705, -0.1)
-    .add(new THREE.SphereGeometry(0.35, 24, 18), 0, 1.52, -0.28)
     .merge();
 
   const dark = new Parts()
     .box(1.5, 0.07, 3.0, 0, 0.27, 0.1)
-    .rbox(0.74, 0.72, 0.2, 0.08, 0, 0.95, -0.58, { rx: -0.2 })
-    .rbox(0.72, 0.14, 0.62, 0.06, 0, 0.66, -0.25)
     .box(0.07, 0.5, 0.1, -0.3, 1.18, -1.42)
     .box(0.07, 0.5, 0.1, 0.3, 1.18, -1.42)
-    .cyl(0.035, 0.035, 0.6, 0, 0.93, 0.44, { rx: 1.0 })
-    .add(new THREE.TorusGeometry(0.2, 0.04, 10, 24), 0, 1.11, 0.25, "#fff", { rx: -0.55 })
     .cyl(0.055, 0.055, 1.72, 0, 0.42, 1.0, { rz: Math.PI / 2 }, "#fff", 10)
     .cyl(0.055, 0.055, 1.76, 0, 0.44, -0.95, { rz: Math.PI / 2 }, "#fff", 10)
     .rbox(1.34, 0.13, 0.15, 0.05, 0, 0.45, -1.52)
+    .merge();
+
+  // Seat, steering wheel and gloves: these travel with the driver.
+  const cockpit = new Parts()
+    .rbox(0.74, 0.72, 0.2, 0.08, 0, 0.95, -0.58, { rx: -0.2 })
+    .rbox(0.72, 0.14, 0.62, 0.06, 0, 0.66, -0.25)
+    .cyl(0.035, 0.035, 0.6, 0, 0.93, 0.44, { rx: 1.0 })
+    .add(new THREE.TorusGeometry(0.2, 0.04, 10, 24), 0, 1.11, 0.25, "#fff", { rx: -0.55 })
     .add(new THREE.SphereGeometry(0.095, 12, 10), -0.2, 1.11, 0.25)
     .add(new THREE.SphereGeometry(0.095, 12, 10), 0.2, 1.11, 0.25)
     .merge();
@@ -133,6 +138,8 @@ function buildShared(): Shared {
     accent,
     dark,
     metal,
+    cockpit,
+    headMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.1 }),
     suit,
     visor,
     lights,
@@ -151,7 +158,184 @@ function buildShared(): Shared {
   };
 }
 
-const WHEELS: [number, number, number, number][] = [
+type WheelSpec = [x: number, y: number, z: number, scale: number];
+
+interface VehicleParts {
+  paint: THREE.BufferGeometry;
+  accent: THREE.BufferGeometry;
+  dark: THREE.BufferGeometry;
+  metal: THREE.BufferGeometry;
+  lights: THREE.BufferGeometry | null;
+  wheels: WheelSpec[];
+  /** How far the driver sits above and behind the go-kart's seat. */
+  seat: [y: number, z: number];
+  flames: [x: number, y: number, z: number];
+}
+
+const vehicleCache: (VehicleParts | undefined)[] = [];
+const mirror = (list: WheelSpec[]): WheelSpec[] => list.flatMap(([x, y, z, k]) => [[-x, y, z, k], [x, y, z, k]] as WheelSpec[]);
+
+/** Bodywork for each entry in VEHICLES. Built the first time someone picks it. */
+function vehicleParts(index: number): VehicleParts {
+  const cached = vehicleCache[index];
+  if (cached) return cached;
+  const s = shared!;
+  let v: VehicleParts;
+  switch (index) {
+    case 1: // Scooter: narrow and upright
+      v = {
+        paint: new Parts()
+          .rbox(0.66, 0.2, 2.5, 0.08, 0, 0.5, 0)
+          .rbox(0.74, 0.95, 0.16, 0.07, 0, 0.98, 1.06, { rx: -0.22 })
+          .rbox(0.68, 0.44, 0.95, 0.14, 0, 0.74, -1.05)
+          .rbox(0.34, 0.16, 0.74, 0.07, 0, 0.8, 1.5)
+          .merge(),
+        accent: new Parts().rbox(0.2, 0.04, 1.3, 0.02, 0, 0.61, 0.1).rbox(0.5, 0.3, 0.05, 0.02, 0, 1.2, 1.17, { rx: -0.22 }).rbox(0.7, 0.08, 0.3, 0.03, 0, 0.99, -1.3).merge(),
+        dark: new Parts().box(0.98, 0.06, 1.0, 0, 0.4, 0.25).cyl(0.035, 0.035, 0.98, 0, 1.5, 0.9, { rz: Math.PI / 2 }, "#fff", 8).cyl(0.045, 0.045, 0.8, 0, 1.15, 0.98, { rx: -0.22 }, "#fff", 8).cyl(0.05, 0.05, 0.96, 0, 0.36, 1.25, { rz: Math.PI / 2 }, "#fff", 8).cyl(0.05, 0.05, 1.04, 0, 0.38, -1.1, { rz: Math.PI / 2 }, "#fff", 8).merge(),
+        metal: new Parts().cyl(0.07, 0.09, 0.8, 0.36, 0.52, -1.35, { rx: Math.PI / 2 }, "#fff", 12).cyl(0.03, 0.03, 0.5, 0, 1.58, 0.9, {}, "#fff", 8).merge(),
+        lights: new Parts().add(new THREE.SphereGeometry(0.1, 10, 8), 0, 1.3, 1.2, "#fff6d8", {}, 4).rbox(0.3, 0.08, 0.06, 0.02, 0, 0.8, -1.54, {}, "#ff2a2a", 4).merge(),
+        wheels: mirror([[0.44, 0.36, 1.25, 0.86], [0.48, 0.38, -1.1, 0.9]]),
+        seat: [0.12, -0.2],
+        flames: [0.36, 0.52, -1.8],
+      };
+      break;
+    case 2: // Hot Rod: long nose, big rear wheels, engine on show
+      v = {
+        paint: new Parts()
+          .rbox(1.12, 0.44, 1.9, 0.14, 0, 0.64, -0.55)
+          .rbox(0.82, 0.36, 1.5, 0.12, 0, 0.6, 1.05)
+          .rbox(0.72, 0.42, 0.2, 0.08, 0, 0.6, 1.86)
+          .rbox(0.5, 0.26, 1.15, 0.12, -0.92, 1.12, -1.0)
+          .rbox(0.5, 0.26, 1.15, 0.12, 0.92, 1.12, -1.0)
+          .rbox(1.0, 0.3, 0.5, 0.12, 0, 0.8, -1.6)
+          .merge(),
+        accent: new Parts().rbox(0.84, 0.04, 1.3, 0.02, 0, 0.785, 1.05).rbox(1.14, 0.05, 0.7, 0.02, 0, 0.865, -1.2).merge(),
+        dark: new Parts().box(1.4, 0.07, 3.3, 0, 0.3, 0.1).box(0.6, 0.3, 0.06, 0, 0.6, 1.97).cyl(0.055, 0.055, 1.6, 0, 0.36, 1.35, { rz: Math.PI / 2 }, "#fff", 10).cyl(0.07, 0.07, 1.9, 0, 0.6, -1.0, { rz: Math.PI / 2 }, "#fff", 10).merge(),
+        metal: new Parts()
+          .rbox(0.5, 0.3, 0.62, 0.06, 0, 0.93, 1.0)
+          .rbox(0.3, 0.2, 0.34, 0.05, 0, 1.16, 1.0)
+          .cyl(0.08, 0.08, 2.0, -0.66, 0.42, -0.2, { rx: Math.PI / 2 }, "#fff", 12)
+          .cyl(0.08, 0.08, 2.0, 0.66, 0.42, -0.2, { rx: Math.PI / 2 }, "#fff", 12)
+          .merge(),
+        lights: new Parts().add(new THREE.SphereGeometry(0.11, 10, 8), -0.52, 0.74, 1.8, "#fff6d8", {}, 4).add(new THREE.SphereGeometry(0.11, 10, 8), 0.52, 0.74, 1.8, "#fff6d8", {}, 4).rbox(0.8, 0.08, 0.06, 0.02, 0, 0.82, -1.86, {}, "#ff2a2a", 4).merge(),
+        wheels: mirror([[0.78, 0.36, 1.35, 0.86], [0.98, 0.6, -1.0, 1.42]]),
+        seat: [0.14, -0.35],
+        flames: [0.66, 0.42, -1.3],
+      };
+      break;
+    case 3: // Forklift: tall, square, roll cage and forks
+      v = {
+        paint: new Parts().rbox(1.5, 0.72, 2.2, 0.12, 0, 0.76, -0.3).rbox(1.5, 0.62, 0.62, 0.16, 0, 0.97, -1.45).rbox(1.4, 0.5, 0.14, 0.05, 0, 0.72, 0.92).merge(),
+        accent: new Parts().rbox(1.46, 0.08, 1.6, 0.03, 0, 2.5, -0.4).rbox(1.52, 0.1, 0.64, 0.03, 0, 0.6, -1.45).rbox(1.52, 0.1, 2.0, 0.03, 0, 0.44, -0.3).merge(),
+        dark: new Parts()
+          .box(0.08, 1.4, 0.08, -0.66, 1.8, 0.3)
+          .box(0.08, 1.4, 0.08, 0.66, 1.8, 0.3)
+          .box(0.08, 1.4, 0.08, -0.66, 1.8, -1.1)
+          .box(0.08, 1.4, 0.08, 0.66, 1.8, -1.1)
+          .box(0.1, 2.0, 0.1, -0.45, 1.2, 1.05)
+          .box(0.1, 2.0, 0.1, 0.45, 1.2, 1.05)
+          .box(1.0, 0.08, 0.1, 0, 2.16, 1.05)
+          .merge(),
+        metal: new Parts().box(0.14, 0.06, 1.2, -0.4, 0.2, 1.65).box(0.14, 0.06, 1.2, 0.4, 0.2, 1.65).box(1.1, 0.5, 0.06, 0, 0.5, 1.12).merge(),
+        lights: new Parts().add(new THREE.SphereGeometry(0.12, 10, 8), 0, 2.62, -0.4, "#fb923c", {}, 5).rbox(0.3, 0.1, 0.06, 0.02, -0.5, 1.0, -1.77, {}, "#ff2a2a", 4).rbox(0.3, 0.1, 0.06, 0.02, 0.5, 1.0, -1.77, {}, "#ff2a2a", 4).merge(),
+        wheels: mirror([[0.82, 0.5, 0.72, 1.2], [0.82, 0.46, -1.1, 1.1]]),
+        seat: [0.46, -0.12],
+        flames: [0.4, 0.6, -1.75],
+      };
+      break;
+    case 4: // Drifter: low and wide with a big wing
+      v = {
+        paint: new Parts()
+          .rbox(1.5, 0.24, 2.7, 0.1, 0, 0.42, 0)
+          .rbox(1.3, 0.2, 0.9, 0.08, 0, 0.4, 1.5, { rx: 0.1 })
+          .rbox(0.3, 0.3, 1.3, 0.1, -0.62, 0.62, -0.25)
+          .rbox(0.3, 0.3, 1.3, 0.1, 0.62, 0.62, -0.25)
+          .rbox(0.96, 0.38, 0.9, 0.14, 0, 0.7, -1.1)
+          .rbox(2.0, 0.07, 0.56, 0.03, 0, 1.6, -1.58, { rx: 0.2 })
+          .rbox(1.96, 0.05, 0.4, 0.02, 0, 0.24, 1.98)
+          .merge(),
+        accent: new Parts().rbox(0.07, 0.5, 0.66, 0.025, -1.0, 1.44, -1.58).rbox(0.07, 0.5, 0.66, 0.025, 1.0, 1.44, -1.58).rbox(0.3, 0.04, 2.4, 0.02, 0, 0.545, 0.3).merge(),
+        dark: new Parts().box(1.56, 0.06, 3.1, 0, 0.26, 0.1).box(0.07, 0.72, 0.1, -0.36, 1.22, -1.5).box(0.07, 0.72, 0.1, 0.36, 1.22, -1.5).cyl(0.055, 0.055, 1.74, 0, 0.38, 1.15, { rz: Math.PI / 2 }, "#fff", 10).cyl(0.055, 0.055, 1.8, 0, 0.44, -1.0, { rz: Math.PI / 2 }, "#fff", 10).merge(),
+        metal: new Parts().cyl(0.1, 0.12, 0.5, -0.26, 0.5, -1.6, { rx: Math.PI / 2 }, "#fff", 12).cyl(0.1, 0.12, 0.5, 0.26, 0.5, -1.6, { rx: Math.PI / 2 }, "#fff", 12).merge(),
+        lights: new Parts().rbox(1.2, 0.06, 0.05, 0.02, 0, 0.62, -1.56, {}, "#ff2a2a", 4).rbox(0.3, 0.06, 0.06, 0.02, -0.5, 0.46, 1.94, {}, "#fff6d8", 4).rbox(0.3, 0.06, 0.06, 0.02, 0.5, 0.46, 1.94, {}, "#fff6d8", 4).merge(),
+        wheels: mirror([[0.88, 0.38, 1.15, 0.9], [0.92, 0.44, -1.0, 1.05]]),
+        seat: [-0.08, 0],
+        flames: [0.26, 0.5, -1.85],
+      };
+      break;
+    default:
+      v = { paint: s.paint, accent: s.accent, dark: s.dark, metal: s.metal, lights: s.lights, wheels: WHEELS, seat: [0, 0], flames: [0.3, 0.63, -1.88] };
+  }
+  vehicleCache[index] = v;
+  return v;
+}
+
+interface AvatarParts {
+  /** Painted in the kart's accent colour (helmets). */
+  tint: THREE.BufferGeometry | null;
+  /** Has its own colours (hats, ears, whole heads). */
+  fixed: THREE.BufferGeometry | null;
+  visor: boolean;
+}
+
+const avatarCache: (AvatarParts | undefined)[] = [];
+const HEAD_Y = 1.52;
+const HEAD_Z = -0.28;
+
+/** Head and headgear for each entry in AVATARS. */
+function avatarParts(index: number): AvatarParts {
+  const cached = avatarCache[index];
+  if (cached) return cached;
+  const helmet = () => new Parts().add(new THREE.SphereGeometry(0.35, 24, 18), 0, HEAD_Y, HEAD_Z).merge();
+  const y = HEAD_Y;
+  const z = HEAD_Z;
+  let a: AvatarParts;
+  switch (index) {
+    case 1: // Cat
+      a = { tint: new Parts().add(new THREE.SphereGeometry(0.35, 24, 18), 0, y, z).add(new THREE.ConeGeometry(0.12, 0.24, 10), -0.2, y + 0.36, z, "#fff", { rz: 0.3 }).add(new THREE.ConeGeometry(0.12, 0.24, 10), 0.2, y + 0.36, z, "#fff", { rz: -0.3 }).merge(), fixed: new Parts().add(new THREE.ConeGeometry(0.06, 0.13, 8), -0.2, y + 0.35, z + 0.03, "#f9a8d4", { rz: 0.3 }).add(new THREE.ConeGeometry(0.06, 0.13, 8), 0.2, y + 0.35, z + 0.03, "#f9a8d4", { rz: -0.3 }).cyl(0.05, 0.03, 0.5, 0, 1.05, -0.78, { rx: -0.9 }, "#e5e7eb", 8).merge(), visor: true };
+      break;
+    case 2: // Robot
+      a = { tint: null, fixed: new Parts().rbox(0.58, 0.5, 0.56, 0.07, 0, y, z, {}, "#9ca3af").rbox(0.46, 0.16, 0.05, 0.02, 0, y + 0.05, z + 0.285, {}, "#0f172a").add(new THREE.SphereGeometry(0.055, 10, 8), -0.11, y + 0.05, z + 0.3, "#22d3ee", {}, 3).add(new THREE.SphereGeometry(0.055, 10, 8), 0.11, y + 0.05, z + 0.3, "#22d3ee", {}, 3).cyl(0.02, 0.02, 0.24, 0, y + 0.36, z, {}, "#6b7280", 6).add(new THREE.SphereGeometry(0.06, 10, 8), 0, y + 0.5, z, "#ef4444", {}, 2.5).cyl(0.07, 0.07, 0.1, -0.33, y, z, { rz: Math.PI / 2 }, "#6b7280", 10).cyl(0.07, 0.07, 0.1, 0.33, y, z, { rz: Math.PI / 2 }, "#6b7280", 10).merge(), visor: false };
+      break;
+    case 3: // Boss: top hat
+      a = { tint: helmet(), fixed: new Parts().cyl(0.44, 0.44, 0.04, 0, y + 0.3, z, {}, "#111827", 24).cyl(0.26, 0.28, 0.38, 0, y + 0.5, z, {}, "#111827", 24).cyl(0.285, 0.285, 0.08, 0, y + 0.36, z, {}, "#dc2626", 24).merge(), visor: true };
+      break;
+    case 4: // Intern: cap and headphones
+      a = { tint: helmet(), fixed: new Parts().add(new THREE.SphereGeometry(0.365, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2.4), 0, y + 0.02, z, "#2563eb").rbox(0.4, 0.04, 0.3, 0.015, 0, y + 0.2, z + 0.42, { rx: 0.15 }, "#1d4ed8").cyl(0.11, 0.11, 0.09, -0.37, y - 0.02, z, { rz: Math.PI / 2 }, "#111827", 14).cyl(0.11, 0.11, 0.09, 0.37, y - 0.02, z, { rz: Math.PI / 2 }, "#111827", 14).merge(), visor: true };
+      break;
+    case 5: { // Royal: crown
+      const crown = new Parts().add(new THREE.CylinderGeometry(0.25, 0.23, 0.14, 20, 1, true), 0, y + 0.37, z, "#facc15");
+      for (let i = 0; i < 6; i++) {
+        const t = (i / 6) * Math.PI * 2;
+        crown.add(new THREE.ConeGeometry(0.06, 0.16, 8), Math.cos(t) * 0.24, y + 0.5, z + Math.sin(t) * 0.24, "#facc15");
+        crown.add(new THREE.SphereGeometry(0.035, 8, 6), Math.cos(t) * 0.24, y + 0.59, z + Math.sin(t) * 0.24, i % 2 ? "#ef4444" : "#38bdf8", {}, 2);
+      }
+      a = { tint: helmet(), fixed: crown.merge(), visor: true };
+      break;
+    }
+    case 6: // Alien
+      a = { tint: null, fixed: new Parts().add(new THREE.SphereGeometry(0.34, 22, 16), 0, y + 0.03, z, "#4ade80", { sy: 1.18 }).add(new THREE.SphereGeometry(0.11, 12, 10), -0.14, y + 0.06, z + 0.26, "#0f172a", { sy: 1.4, rz: 0.35 }).add(new THREE.SphereGeometry(0.11, 12, 10), 0.14, y + 0.06, z + 0.26, "#0f172a", { sy: 1.4, rz: -0.35 }).cyl(0.015, 0.015, 0.3, -0.14, y + 0.5, z, { rz: 0.3 }, "#22c55e", 6).cyl(0.015, 0.015, 0.3, 0.14, y + 0.5, z, { rz: -0.3 }, "#22c55e", 6).add(new THREE.SphereGeometry(0.05, 8, 6), -0.19, y + 0.65, z, "#fde047", {}, 3).add(new THREE.SphereGeometry(0.05, 8, 6), 0.19, y + 0.65, z, "#fde047", {}, 3).merge(), visor: false };
+      break;
+    case 7: { // Unicorn
+      const u = new Parts().add(new THREE.SphereGeometry(0.35, 22, 16), 0, y, z, "#f8fafc").add(new THREE.ConeGeometry(0.07, 0.42, 10), 0, y + 0.5, z + 0.12, "#facc15", { rx: 0.25 }).add(new THREE.ConeGeometry(0.08, 0.18, 8), -0.2, y + 0.36, z - 0.02, "#f8fafc").add(new THREE.ConeGeometry(0.08, 0.18, 8), 0.2, y + 0.36, z - 0.02, "#f8fafc");
+      ["#f472b6", "#a78bfa", "#38bdf8", "#34d399"].forEach((c, i) => u.add(new THREE.SphereGeometry(0.13, 10, 8), 0, y + 0.3 - i * 0.17, z - 0.24 - i * 0.07, c));
+      a = { tint: null, fixed: u.merge(), visor: true };
+      break;
+    }
+    case 8: // Astronaut
+      a = { tint: null, fixed: new Parts().add(new THREE.SphereGeometry(0.41, 24, 18), 0, y + 0.02, z, "#f1f5f9").add(new THREE.SphereGeometry(0.415, 24, 12, Math.PI / 2 - 1.05, 2.1, 0.95, 0.85), 0, y + 0.02, z, "#f59e0b", {}, 1.4).cyl(0.08, 0.08, 0.1, -0.42, y, z, { rz: Math.PI / 2 }, "#94a3b8", 10).cyl(0.08, 0.08, 0.1, 0.42, y, z, { rz: Math.PI / 2 }, "#94a3b8", 10).cyl(0.012, 0.012, 0.3, 0.3, y + 0.5, z - 0.1, {}, "#94a3b8", 6).merge(), visor: false };
+      break;
+    case 9: // Chef
+      a = { tint: helmet(), fixed: new Parts().cyl(0.25, 0.25, 0.24, 0, y + 0.42, z, {}, "#f8fafc", 20).add(new THREE.SphereGeometry(0.2, 12, 10), -0.14, y + 0.62, z, "#f8fafc").add(new THREE.SphereGeometry(0.2, 12, 10), 0.14, y + 0.62, z, "#f8fafc").add(new THREE.SphereGeometry(0.21, 12, 10), 0, y + 0.66, z + 0.08, "#f8fafc").add(new THREE.SphereGeometry(0.2, 12, 10), 0, y + 0.62, z - 0.12, "#f8fafc").merge(), visor: true };
+      break;
+    default: // Racer
+      a = { tint: helmet(), fixed: null, visor: true };
+  }
+  avatarCache[index] = a;
+  return a;
+}
+
+const WHEELS: WheelSpec[] = [
   // x, y, z, scale
   [-0.84, 0.42, 1.0, 1],
   [0.84, 0.42, 1.0, 1],
@@ -174,8 +358,16 @@ export class KartVisual {
   /** Smoothed steering (-1 left .. 1 right), derived from how fast the kart is turning. */
   steer = 0;
   private readonly body = new THREE.Group();
+  private readonly driver = new THREE.Group();
+  private bodyMeshes: THREE.Mesh[] = [];
+  private helmet!: THREE.Mesh;
+  private headgear!: THREE.Mesh;
+  private visor!: THREE.Mesh;
+  private vehicle = 0;
+  private avatar = 0;
   private readonly wheels: THREE.Mesh[] = [];
   private readonly pivots: THREE.Group[] = [];
+  private readonly wheelPivots: THREE.Group[] = [];
   private readonly flames: THREE.Mesh[] = [];
   private readonly flameMat: THREE.MeshBasicMaterial;
   private readonly label: THREE.Sprite;
@@ -207,13 +399,23 @@ export class KartVisual {
       this.meshes.push(m);
       return m;
     };
-    add(s.paint, this.paint);
-    add(s.accent, this.accent);
-    add(s.dark, s.darkMat);
-    add(s.metal, s.metalMat);
-    add(s.suit, s.suitMat);
-    add(s.visor, s.visorMat, false);
-    add(s.lights, s.lightsMat, false);
+    this.bodyMeshes = [add(s.paint, this.paint), add(s.accent, this.accent), add(s.dark, s.darkMat), add(s.metal, s.metalMat), add(s.lights, s.lightsMat, false)];
+    // The driver, seat and steering wheel sit in their own group so each vehicle can place them.
+    const addDriver = (geo: THREE.BufferGeometry, mat: THREE.Material, shadow = true) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = shadow;
+      this.driver.add(m);
+      this.meshes.push(m);
+      return m;
+    };
+    addDriver(s.cockpit, s.darkMat);
+    addDriver(s.suit, s.suitMat);
+    const racer = avatarParts(0);
+    this.helmet = addDriver(racer.tint!, this.accent);
+    this.headgear = addDriver(racer.tint!, s.headMat);
+    this.headgear.visible = false;
+    this.visor = addDriver(s.visor, s.visorMat, false);
+    b.add(this.driver);
 
     WHEELS.forEach(([x, y, z, scale], i) => {
       const pivot = new THREE.Group();
@@ -225,6 +427,7 @@ export class KartVisual {
       pivot.add(w);
       b.add(pivot);
       this.wheels.push(w);
+      this.wheelPivots.push(pivot);
       if (i < 2) this.pivots.push(pivot);
     });
 
@@ -265,6 +468,35 @@ export class KartVisual {
     for (const m of this.meshes) m.castShadow = look.shadows && m.material !== shared!.visorMat && m.material !== shared!.lightsMat;
     this.blob.visible = !look.shadows;
     this.glow.visible = look.underglow;
+  }
+
+  /** Swap the bodywork and the driver's look. Cheap to call every frame: it only acts on a change. */
+  setStyle(vehicle: number, avatar: number): void {
+    if (vehicle !== this.vehicle) {
+      this.vehicle = vehicle;
+      const v = vehicleParts(vehicle);
+      const geos = [v.paint, v.accent, v.dark, v.metal, v.lights];
+      this.bodyMeshes.forEach((m, i) => {
+        m.visible = geos[i] !== null;
+        if (geos[i]) m.geometry = geos[i]!;
+      });
+      v.wheels.forEach(([x, y, z, scale], i) => {
+        this.wheelPivots[i].position.set(x, y, z);
+        this.wheels[i].scale.setScalar(scale);
+      });
+      this.driver.position.set(0, v.seat[0], v.seat[1]);
+      this.flames.forEach((f, i) => f.position.set(i === 0 ? -v.flames[0] : v.flames[0], v.flames[1], v.flames[2]));
+      this.label.position.y = 3.3 + Math.max(0, v.seat[0]) * 1.4;
+    }
+    if (avatar !== this.avatar) {
+      this.avatar = avatar;
+      const a = avatarParts(avatar);
+      this.helmet.visible = a.tint !== null;
+      if (a.tint) this.helmet.geometry = a.tint;
+      this.headgear.visible = a.fixed !== null;
+      if (a.fixed) this.headgear.geometry = a.fixed;
+      this.visor.visible = a.visor;
+    }
   }
 
   setIdentity(name: string, colorIndex: number, showLabel: boolean): void {
