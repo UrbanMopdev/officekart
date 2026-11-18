@@ -192,6 +192,11 @@ export function Hud() {
     <div className="touch-game pointer-events-none absolute inset-0 select-none p-4" style={{ paddingLeft: "max(1rem, env(safe-area-inset-left))", paddingRight: "max(1rem, env(safe-area-inset-right))" }}>
       {underwater && <div className="absolute inset-0 bg-cyan-500/15 mix-blend-screen" />}
       {!spectating && <SpeedLines />}
+      {trial && !me?.finished && (
+        <div className="absolute inset-x-0 top-14 flex justify-center tall:top-16">
+          <span className="rounded-full bg-slate-900/70 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-amber-200">Time trial · no power-ups</span>
+        </div>
+      )}
       {!spectating && <Callouts />}
       {room.phase === "countdown" && !spectating && <RocketHint touchUi={compact} />}
       {!compact && !trial && !spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} />}

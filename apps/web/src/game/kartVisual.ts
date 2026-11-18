@@ -11,6 +11,9 @@ import { glowTexture, labelTexture } from "./textures";
 
 interface Shared {
   cockpit: THREE.BufferGeometry;
+  steering: THREE.BufferGeometry;
+  hand: THREE.BufferGeometry;
+  arm: THREE.BufferGeometry;
   headMat: THREE.Material;
   paint: THREE.BufferGeometry;
   accent: THREE.BufferGeometry;
@@ -97,10 +100,17 @@ function buildShared(): Shared {
     .rbox(0.74, 0.72, 0.2, 0.08, 0, 0.95, -0.58, { rx: -0.2 })
     .rbox(0.72, 0.14, 0.62, 0.06, 0, 0.66, -0.25)
     .cyl(0.035, 0.035, 0.6, 0, 0.93, 0.44, { rx: 1.0 })
-    .add(new THREE.TorusGeometry(0.2, 0.04, 10, 24), 0, 1.11, 0.25, "#fff", { rx: -0.55 })
-    .add(new THREE.SphereGeometry(0.095, 12, 10), -0.2, 1.11, 0.25)
-    .add(new THREE.SphereGeometry(0.095, 12, 10), 0.2, 1.11, 0.25)
     .merge();
+  // Steering wheel, modelled flat at the origin so it can spin about its own axis.
+  const steering = new Parts()
+    .add(new THREE.TorusGeometry(0.2, 0.04, 10, 24), 0, 0, 0)
+    .box(0.36, 0.05, 0.03, 0, 0, 0)
+    .box(0.05, 0.2, 0.03, 0, -0.09, 0)
+    .cyl(0.06, 0.06, 0.05, 0, 0, 0, { rx: Math.PI / 2 }, "#fff", 12)
+    .merge();
+  const hand = new THREE.SphereGeometry(0.095, 12, 10);
+  // One arm: a capsule one unit long pointing up, stretched from shoulder to hand every frame.
+  const arm = new THREE.CapsuleGeometry(0.078, 1, 4, 10);
 
   const metal = new Parts()
     .cyl(0.095, 0.115, 0.62, -0.3, 0.63, -1.58, { rx: Math.PI / 2 }, "#fff", 14)
@@ -112,8 +122,8 @@ function buildShared(): Shared {
 
   const suit = new Parts()
     .add(new THREE.CapsuleGeometry(0.25, 0.34, 6, 14), 0, 1.03, -0.3)
-    .add(new THREE.CapsuleGeometry(0.078, 0.44, 4, 10), -0.24, 1.15, -0.02, "#fff", { rx: Math.PI / 2 - 0.12, rz: 0.1 })
-    .add(new THREE.CapsuleGeometry(0.078, 0.44, 4, 10), 0.24, 1.15, -0.02, "#fff", { rx: Math.PI / 2 - 0.12, rz: -0.1 })
+    .add(new THREE.SphereGeometry(0.11, 10, 8), -0.27, 1.25, -0.28)
+    .add(new THREE.SphereGeometry(0.11, 10, 8), 0.27, 1.25, -0.28)
     .merge();
 
   // Front band of the helmet. In three's sphere, +z is at phi = PI / 2.
@@ -139,6 +149,9 @@ function buildShared(): Shared {
     dark,
     metal,
     cockpit,
+    steering,
+    hand,
+    arm,
     headMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.1 }),
     suit,
     visor,
@@ -335,6 +348,14 @@ function avatarParts(index: number): AvatarParts {
   return a;
 }
 
+const NECK = new THREE.Vector3(0, 1.3, -0.28);
+const WHEEL_AT = new THREE.Vector3(0, 1.11, 0.25);
+const WHEEL_TILT = -0.55;
+const UP = new THREE.Vector3(0, 1, 0);
+const handAt = new THREE.Vector3();
+const shoulder = new THREE.Vector3();
+const reach = new THREE.Vector3();
+
 const WHEELS: WheelSpec[] = [
   // x, y, z, scale
   [-0.84, 0.42, 1.0, 1],
@@ -359,6 +380,21 @@ export class KartVisual {
   steer = 0;
   private readonly body = new THREE.Group();
   private readonly driver = new THREE.Group();
+  private readonly rider = new THREE.Group();
+  private readonly head = new THREE.Group();
+  private readonly wheel = new THREE.Group();
+  private readonly hands: THREE.Mesh[] = [];
+  private readonly arms: THREE.Mesh[] = [];
+  /** 0 = hands on the wheel, 1 = arms in the air. */
+  private armsUp = 0;
+  private cheer = 0;
+  /** Squash-and-stretch spring: offset from rest and its velocity. */
+  private squash = 0;
+  private squashV = 0;
+  private airFor = 0;
+  private prevAir = false;
+  private prevBoost = false;
+  private wheelie = 0;
   private bodyMeshes: THREE.Mesh[] = [];
   private helmet!: THREE.Mesh;
   private headgear!: THREE.Mesh;
@@ -409,12 +445,29 @@ export class KartVisual {
       return m;
     };
     addDriver(s.cockpit, s.darkMat);
-    addDriver(s.suit, s.suitMat);
+    // The torso and head lean and turn; the head pivots at the neck.
+    const inRider = (m: THREE.Mesh, parent: THREE.Object3D) => {
+      this.driver.remove(m);
+      parent.add(m);
+      return m;
+    };
+    inRider(addDriver(s.suit, s.suitMat), this.rider);
     const racer = avatarParts(0);
-    this.helmet = addDriver(racer.tint!, this.accent);
-    this.headgear = addDriver(racer.tint!, s.headMat);
+    this.head.position.copy(NECK);
+    this.helmet = inRider(addDriver(racer.tint!, this.accent), this.head);
+    this.headgear = inRider(addDriver(racer.tint!, s.headMat), this.head);
     this.headgear.visible = false;
-    this.visor = addDriver(s.visor, s.visorMat, false);
+    this.visor = inRider(addDriver(s.visor, s.visorMat, false), this.head);
+    for (const m of [this.helmet, this.headgear, this.visor]) m.position.copy(NECK).negate();
+    this.rider.add(this.head);
+    this.driver.add(this.rider);
+    this.wheel.position.copy(WHEEL_AT);
+    inRider(addDriver(s.steering, s.darkMat), this.wheel);
+    this.driver.add(this.wheel);
+    for (let i = 0; i < 2; i++) {
+      this.hands.push(addDriver(s.hand, s.darkMat));
+      this.arms.push(addDriver(s.arm, s.suitMat));
+    }
     b.add(this.driver);
 
     WHEELS.forEach(([x, y, z, scale], i) => {
@@ -593,9 +646,61 @@ export class KartVisual {
     this.slide += (-drift * 0.42 - this.slide) * k;
     this.roll += (this.steer * grip * 0.075 + this.slide * 0.22 - this.roll) * k;
     this.pitch += (Math.max(-0.05, Math.min(0.05, -accel * 0.0022)) - this.pitch) * k;
-    this.body.rotation.set(this.pitch, this.slide + this.spinAngle, this.roll + this.trickAngle);
-    const rumble = Math.abs(speed) > 1 ? Math.sin(time * 47 + x) * 0.006 * Math.min(1, Math.abs(speed) / 20) : 0;
+    // A boost kicks the nose up for a moment; a landing squashes the kart and it springs back.
+    if (boosting && !this.prevBoost) this.wheelie = 1;
+    this.prevBoost = boosting;
+    this.wheelie = Math.max(0, this.wheelie - dt * 2.6);
+    if (this.prevAir && !airborne && this.airFor > 0.22) this.squashV -= Math.min(4.2, 1.6 + this.airFor * 3.2);
+    this.airFor = airborne ? this.airFor + dt : 0;
+    this.prevAir = airborne;
+    const step = Math.min(dt, 0.033);
+    this.squashV += (-150 * this.squash - 13 * this.squashV) * step;
+    this.squash = Math.max(-0.3, Math.min(0.3, this.squash + this.squashV * step));
+    const stretch = this.wheelie * 0.07 + (airborne ? 0.03 : 0);
+    this.body.scale.set(1 - this.squash * 0.45, 1 + this.squash, 1 - this.squash * 0.45 + stretch);
+    this.body.rotation.set(this.pitch - Math.sin(this.wheelie * Math.PI) * 0.13, this.slide + this.spinAngle, this.roll + this.trickAngle);
+    const moving = Math.abs(speed) > 1;
+    const rumble = moving ? Math.sin(time * 47 + x) * 0.006 * Math.min(1, Math.abs(speed) / 20) : Math.sin(time * 31 + x) * 0.004;
     this.body.position.y = Math.sin(this.hop * Math.PI) * 0.6 + rumble + (boosting ? Math.sin(time * 70) * 0.012 : 0);
+
+    // --- The driver: turns the wheel, looks and leans into corners, throws both arms up for a trick, flails when hit.
+    const spun = (fx & FX.SPIN) !== 0;
+    const tricking = (fx & FX.TRICK) !== 0;
+    if (tricking) this.cheer = 0.9;
+    this.cheer = Math.max(0, this.cheer - dt);
+    const up = tricking || this.cheer > 0 || spun ? 1 : 0;
+    this.armsUp += (up - this.armsUp) * (1 - Math.exp(-dt * 12));
+    const lean = this.steer * grip * 0.13 - this.slide * 0.18;
+    this.rider.rotation.z = lean;
+    this.rider.position.x = lean * 0.75;
+    this.rider.rotation.x = Math.max(-0.12, Math.min(0.16, accel * 0.004)) + this.squash * 0.5;
+    const wobble = spun ? Math.sin(time * 19) * 0.4 : 0;
+    this.head.rotation.set(this.squash * 0.9 + (spun ? Math.sin(time * 23) * 0.2 : 0), -this.steer * 0.5 + this.slide * 0.5 + wobble, this.steer * 0.1 + wobble * 0.5);
+    const turn = -this.steer * 1.35 + (spun ? Math.sin(time * 30) * 0.8 : 0);
+    this.wheel.rotation.set(WHEEL_TILT, 0, turn);
+    const ct = Math.cos(WHEEL_TILT);
+    const st = Math.sin(WHEEL_TILT);
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      // Where this hand grips the rim, in the driver's space...
+      const lx = Math.cos(turn) * 0.2 * side;
+      const ly = Math.sin(turn) * 0.2 * side;
+      handAt.set(WHEEL_AT.x + lx, WHEEL_AT.y + ly * ct, WHEEL_AT.z + ly * st);
+      // ...or up in the air, waving.
+      if (this.armsUp > 0.01) {
+        const wave = Math.sin(time * (spun ? 21 : 13) + i * 2.1) * 0.1;
+        reach.set(side * (0.46 + wave), 1.98 + Math.abs(wave), -0.22 + (spun ? wave * 2 : 0));
+        handAt.lerp(reach, this.armsUp);
+      }
+      shoulder.set(side * 0.27 + this.rider.position.x * 0.6, 1.25, -0.28);
+      this.hands[i].position.copy(handAt);
+      reach.subVectors(handAt, shoulder);
+      const len = reach.length();
+      const arm = this.arms[i];
+      arm.position.copy(shoulder).addScaledVector(reach, 0.5);
+      arm.scale.set(1, Math.max(0.05, len - 0.12), 1);
+      arm.quaternion.setFromUnitVectors(UP, reach.multiplyScalar(1 / Math.max(1e-3, len)));
+    }
 
     const spin = (speed * dt) / 0.42;
     for (const w of this.wheels) w.rotation.x += spin;

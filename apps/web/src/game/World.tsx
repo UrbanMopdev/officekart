@@ -10,6 +10,8 @@ import { ParticleSystem } from "./particles";
 import { feel, kartActive, kartPos } from "./shared";
 import { GhostRecorder, decodeGhost, loadGhost, sampleGhost, type Ghost } from "./ghost";
 import { fetchGhost } from "../net/api";
+import { SkidMarks } from "./skid";
+import { Weather, weatherFor } from "./weather";
 import { Hazards } from "./Hazards";
 import { TerrainTheme } from "./themes/TerrainTheme";
 import { NeonTheme } from "./themes/NeonTheme";
@@ -21,6 +23,8 @@ const probe: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0, fx
 const focus: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0, fx: 0 };
 const loc = { idx: 0, along: 0, lateral: 0 };
 const v3 = new THREE.Vector3();
+const v4 = new THREE.Vector3();
+const CONFETTI: [number, number, number][] = [[2.2, 0.5, 0.5], [0.5, 1.6, 2.2], [2.2, 1.8, 0.4], [0.6, 2.1, 0.8], [2, 0.6, 2], [2.2, 2.2, 2.2]];
 
 /** Spark colours per mini-turbo level (HDR so they bloom). */
 const SPARK: [number, number, number][] = [
@@ -82,6 +86,14 @@ export function World({ quality }: { quality: Quality }) {
     },
     [particles],
   );
+  // Tyre marks stay on the road for the race; the air carries snow, embers, dust or neon motes.
+  const skids = useMemo(() => new SkidMarks(quality === "low" ? 700 : 1600), [quality]);
+  useEffect(() => () => skids.dispose(), [skids]);
+  const weatherKind = weatherFor(track.def.theme);
+  const calm = useStore((s) => s.settings.reducedFx);
+  const weather = useMemo(() => (weatherKind && !calm ? new Weather(weatherKind, quality === "low" ? 0.4 : quality === "medium" ? 0.7 : 1) : null), [weatherKind, quality, calm]);
+  useEffect(() => () => weather?.dispose(), [weather]);
+  const party = useRef({ race: -1, done: false });
 
   // Image-based lighting: gives paint, metal and glass something to reflect.
   useEffect(() => {
@@ -287,6 +299,7 @@ export function World({ quality }: { quality: Quality }) {
         const fx = Math.sin(sample.heading);
         const fz = Math.cos(sample.heading);
         const drift = !airborne && (sample.flags & (FLAG.DRIFT_LEFT | FLAG.DRIFT_RIGHT)) !== 0;
+        skids.track(p.slot, drift && speed > 6 && !wet, v.toWorld(REAR_LEFT, v3), v.toWorld(REAR_RIGHT, v4));
         const level = (sample.flags >> FLAG.LEVEL_SHIFT) & 3;
         if (drift && speed > 5 && !wet) {
           const c = SPARK[level];
@@ -560,6 +573,27 @@ export function World({ quality }: { quality: Quality }) {
     }
 
     const pixelsPerUnit = state.size.height / (2 * Math.tan((camera.fov * Math.PI) / 360));
+    // Confetti when you cross the line.
+    if (party.current.race !== room.raceNumber) {
+      party.current = { race: room.raceNumber, done: false };
+      skids.clear();
+    }
+    if (me?.finished && !party.current.done && inRace) {
+      party.current.done = true;
+      const px = kartPos[me.slot * 2];
+      const pz = kartPos[me.slot * 2 + 1];
+      for (let i = 0; i < (settings.reducedFx ? 60 : 220); i++) {
+        const a = Math.random() * Math.PI * 2;
+        const c = CONFETTI[i % CONFETTI.length];
+        particles.glow.emit({
+          x: px + Math.cos(a) * 2, y: camera.position.y + 1 + Math.random() * 3, z: pz + Math.sin(a) * 2,
+          vx: Math.cos(a) * (2 + Math.random() * 7), vy: 3 + Math.random() * 7, vz: Math.sin(a) * (2 + Math.random() * 7),
+          life: 1.6 + Math.random() * 1.4, size: 0.2 + Math.random() * 0.22, grow: 1,
+          r: c[0], g: c[1], b: c[2], alpha: 1, gravity: 7, drag: 1.1, floor: -1e3,
+        });
+      }
+    }
+    weather?.update(dt, time, camera.position);
     particles.glow.update(dt, pixelsPerUnit);
     particles.smoke.update(dt, pixelsPerUnit);
 
@@ -602,6 +636,8 @@ export function World({ quality }: { quality: Quality }) {
       )}
       <TrackSurface track={track} theme={theme} />
       <group ref={kartsRef} />
+      <primitive object={skids.mesh} />
+      {weather && <primitive object={weather.points} />}
       <primitive object={particles.smoke.points} />
       <primitive object={particles.glow.points} />
     </>

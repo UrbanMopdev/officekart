@@ -83,7 +83,7 @@ export function WeeklyCard({ busy, onRace, onTrial, onBoards }: { busy: boolean;
         <>
           <div className="mt-1 text-2xl font-black">{track.name}</div>
           <p className="mb-3 text-xs text-white/55">
-            Solo time trial · 3 laps · {SPEED_CLASSES[c.speed].name} · no power-ups. Fastest time by Sunday night wins the week.
+            Solo against the clock: 3 laps at {SPEED_CLASSES[c.speed].name} speed. <strong className="text-white/80">No power-ups</strong> here, so every time is fair. Fastest by Sunday night wins the week. For a race with power-ups, create a lobby above.
           </p>
           <BoardList entries={data.race} by="race" limit={3} empty="Nobody has set a time this week. Be the first." />
           {data.me && data.myRank > 3 && (
