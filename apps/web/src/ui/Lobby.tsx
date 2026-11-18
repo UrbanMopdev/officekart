@@ -8,7 +8,7 @@ import { Button, Panel } from "./common";
 const AVATAR_ICONS = ["🏁", "🐱", "🤖", "🎩", "🧢", "👑", "👽", "🦄", "🧑‍🚀", "👨‍🍳"];
 /** Stat bars: label, field, and the range across all vehicles. */
 const STATS: [string, "speed" | "accel" | "turn" | "drift" | "weight", number, number][] = [
-  ["Top speed", "speed", 0.96, 1.05],
+  ["Top speed", "speed", 0.97, 1.05],
   ["Acceleration", "accel", 0.8, 1.3],
   ["Handling", "turn", 0.9, 1.14],
   ["Drift", "drift", 0.9, 1.3],

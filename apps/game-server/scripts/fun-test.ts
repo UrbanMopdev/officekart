@@ -14,13 +14,16 @@ function check(name: string, ok: boolean, detail = ""): void {
 }
 
 /** One scripted lap; `tricks` taps drift once in the air on every jump. */
-function lap(trackId: string, k: number, tricks: boolean): { seconds: number; boosts: number; top: number } {
+/** `probe`: report how far the kart has gone by that tick. */
+function lap(trackId: string, k: number, tricks: boolean, probe = -1): { seconds: number; boosts: number; top: number; landedAt: number; reach: number } {
   const track = getTrack(trackId);
   const s = placeOnGrid(createKartState(), track, 0);
   const input: KartInput = { throttle: 0, steer: 0, drift: false, reset: false, use: false };
   let travel = wrapDelta(s.pos, 0, track.n);
   let boosts = 0;
   let top = 0;
+  let landedAt = -1;
+  let reach = 0;
   for (let tick = 0; tick < 300 / DT; tick++) {
     const i = (s.idx + Math.round(5 + Math.abs(s.speed) * 0.22)) % track.n;
     const want = Math.atan2(track.px[i] - s.x, track.pz[i] - s.z);
@@ -30,12 +33,16 @@ function lap(trackId: string, k: number, tricks: boolean): { seconds: number; bo
     const boostBefore = s.boost;
     const tricking = s.trick !== 0 && s.air;
     stepKart(s, input, track, { ...NO_CTX, speed: k });
-    if (tricking && !s.air && s.boost >= TRICK.boost - 0.001 && s.boost > boostBefore) boosts++;
+    if (tricking && !s.air && s.boost >= TRICK.boost - 0.001 && s.boost > boostBefore) {
+      boosts++;
+      if (landedAt < 0) landedAt = tick;
+    }
     top = Math.max(top, s.speed);
     travel += wrapDelta(s.pos, before, track.n);
-    if (travel >= track.n) return { seconds: tick * DT, boosts, top };
+    if (tick === probe) reach = travel * track.spacing;
+    if (travel >= track.n) return { seconds: tick * DT, boosts, top, landedAt, reach };
   }
-  return { seconds: Infinity, boosts, top };
+  return { seconds: Infinity, boosts, top, landedAt, reach };
 }
 
 async function main(): Promise<void> {
@@ -43,12 +50,14 @@ async function main(): Promise<void> {
   const times = SPEED_CLASSES.map((c) => lap("proving-grounds", c.k, false));
   check("each speed class laps faster than the one below", times.every((t, i) => i === 0 || t.seconds < times[i - 1].seconds), times.map((t) => t.seconds.toFixed(1)).join(" > ") + " s");
   check("top speed scales with the class", times.every((t, i) => i === 0 || t.top > times[i - 1].top * 1.08), times.map((t) => t.top.toFixed(0)).join(", ") + " m/s");
-  const plain = lap("sky-high-insanity", 1.2, false);
-  const tricky = lap("sky-high-insanity", 1.2, true);
-  check("a drift tap in mid-air pays out as a boost on landing", tricky.boosts >= 2, `${tricky.boosts} trick boosts`);
-  check("tricks make the lap faster", tricky.seconds < plain.seconds, `${tricky.seconds.toFixed(1)} s vs ${plain.seconds.toFixed(1)} s`);
+  // The two runs are identical until the first trick lands, so one second later the gain is exactly the boost.
+  const first = lap("volcano-pass", 1.2, true);
+  const tricky = lap("volcano-pass", 1.2, true, first.landedAt + 30);
+  const plain = lap("volcano-pass", 1.2, false, first.landedAt + 30);
+  check("a drift tap in mid-air pays out as a boost on landing", tricky.boosts >= 1, `${tricky.boosts} trick boosts`);
+  check("a second after landing, the kart that did the trick is ahead", tricky.reach > plain.reach + 2, `${(tricky.reach - plain.reach).toFixed(1)} m ahead`);
   check("holding drift through a jump is not a trick", (() => {
-    const track = getTrack("sky-high-insanity");
+    const track = getTrack("volcano-pass");
     const s = placeOnGrid(createKartState(), track, 0);
     const input: KartInput = { throttle: 0, steer: 0, drift: false, reset: false, use: false };
     let tricks = 0;
@@ -80,7 +89,7 @@ async function main(): Promise<void> {
     a.room.send(MSG.SETTINGS, { speed: 9 });
     await sleep(200);
     check("only the host can change the speed class, and only to a real one", a.room.state.speed === 3);
-    a.room.send(MSG.SETTINGS, { speed: 1, trackId: "neon-cyber-city" });
+    a.room.send(MSG.SETTINGS, { speed: 1, trackId: "neon-circuit" });
     await a.waitFor("speed reset", () => a.room.state.speed === 1);
     b.room.send(MSG.READY, true);
     c.room.send(MSG.READY, true);

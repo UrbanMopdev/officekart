@@ -229,8 +229,9 @@ function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): { ro
     const x = x0 + r() * W;
     const z = z0 + r() * D;
     const y = heightAt(x, z);
-    if (info.d < wall + 5 || (y < WATER_LEVEL && !underwaterTrack)) continue;
     const s = 1 + r() * 4.5;
+    // Big boulders stand further back, so none leans over the barrier or into view of the road.
+    if (info.d < wall + 4 + s * 1.6 || (y < WATER_LEVEL && !underwaterTrack)) continue;
     m.compose(new THREE.Vector3(x, y + s * 0.2, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 3, r() * 3, r() * 3)), new THREE.Vector3(s, s * (0.6 + r() * 0.5), s * (0.8 + r() * 0.6)));
     rocks.setMatrixAt(placed++, m);
   }

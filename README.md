@@ -33,10 +33,17 @@ support, PostgreSQL-backed profiles and leaderboards.
 All seven phases of the 2.0 specification have a working first version. Each was checked with automated
 tests before the next was started; none of it has been tuned by people playing yet.
 
-**Tracks.** Eight circuits plus the test track, each with its own height profile, surfaces, hazards and
-environment: Office Apocalypse, Volcano Mayhem, Deep Sea Disaster, Sky High Insanity, Frozen Frenzy,
-Jungle Temple Chaos, Neon Cyber City, Chaos Dimension, and Proving Grounds. Office Dash and Neon Nights
-became Office Apocalypse and Neon Cyber City.
+**Tracks.** Four circuits, each drawn corner by corner (`packages/shared/src/tracks/layout.ts`: a layout
+is a polygon whose vertices are corners with a chosen radius), so there are real hairpins (about 17 m),
+chicanes, esses and sweepers instead of smooth loops:
+- *Office Grand Prix*: bus-stop chicane, double hairpin, table-top jump, desk slalom on conveyor belts.
+- *Volcano Pass*: three stacked hairpins up a 58 m climb, a lava jump on the open crater rim, esses down.
+- *Neon Circuit*: a street circuit with a ramp jump into a braking hairpin, flyovers, two chicanes, laser gates.
+- *Frozen Lake*: an icy S, a snowed-in hairpin, and esses over ice that cracks.
+The earlier eight looped tracks were removed. Proving Grounds remains as a test-only track.
+
+Corners bank gently about their inside edge. Driving into a wall now costs speed in proportion to the
+impact. Surface patches (ice, snow, mud, dirt, oil, belts, boost road) are textured and fade into the road.
 
 **Terrain and physics.** Slopes, banking, jumps, gaps and open edges with recovery, and ten surfaces:
 asphalt, dirt, mud, ice, snow, sand, boost road, oil, and conveyors in both directions.
@@ -111,8 +118,6 @@ and 2.2 s.
 - Two of the nine chaos events (Lava Surge, Portal Madness), which need routes that open and close.
 - Confetti, finish-line camera and celebration animations.
 - Rivalries and standings last for a lobby session only. There is still no database.
-- Three layouts are reused: Deep Sea Disaster mirrors Proving Grounds, Frozen Frenzy mirrors the Neon
-  layout, and Neon Cyber City and Office Apocalypse keep their Phase 1 layouts.
 
 ### Checks
 

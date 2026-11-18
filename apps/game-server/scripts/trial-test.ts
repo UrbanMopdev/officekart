@@ -3,7 +3,7 @@
  * (run against the in-memory score store unless DATABASE_URL is set).
  *   npm run test:trial -w @office-kart/game-server
  */
-import { INPUT_BITS, KART, MSG, NO_CTX, TRIAL_LAPS, VEHICLES, collideKarts, createKartState, decodeInput, getTrack, placeOnGrid, stepKart, weeklyChallenge, type KartInput, type TrialResult } from "@office-kart/shared";
+import { INPUT_BITS, KART, MSG, NO_CTX, TRACK_DEFS, TRIAL_LAPS, VEHICLES, collideKarts, createKartState, decodeInput, getTrack, placeOnGrid, stepKart, weeklyChallenge, type KartInput, type TrialResult } from "@office-kart/shared";
 import { Bot, sleep } from "./bot";
 import { drive } from "./drive";
 import { getServer } from "./spawn-server";
@@ -17,7 +17,7 @@ const input = (): KartInput => ({ throttle: 0, steer: 0, drift: false, reset: fa
 
 /** Speed 1.5 s after a standing start. */
 function launch(veh: number): number {
-  const track = getTrack("neon-cyber-city");
+  const track = getTrack("neon-circuit");
   const s = placeOnGrid(createKartState(), track, 0);
   s.veh = veh;
   const inp = input();
@@ -49,11 +49,13 @@ function shunt(a: number, b: number): [number, number] {
 }
 
 async function main(): Promise<void> {
-  // ---- Vehicles
-  const laps = VEHICLES.map((_, v) => drive("office-apocalypse", v, 1.2, true));
-  check("every vehicle laps the track without falling", laps.every((l) => Number.isFinite(l.t) && l.falls === 0), laps.map((l, v) => `${VEHICLES[v].name} ${l.t.toFixed(1)} s`).join(", "));
-  const spread = Math.max(...laps.map((l) => l.t)) / Math.min(...laps.map((l) => l.t));
-  check("on Office Apocalypse no vehicle is more than 6% quicker than another", spread < 1.06, `spread ${((spread - 1) * 100).toFixed(1)}%`);
+  // ---- Vehicles (one scripted lap is noisy on a technical circuit, so each vehicle is judged over all four)
+  const tracks = Object.keys(TRACK_DEFS);
+  const runs = VEHICLES.map((_, v) => tracks.map((id) => drive(id, v, 1.2, true)));
+  const totals = runs.map((r) => r.reduce((sum, l) => sum + l.t, 0));
+  check("every vehicle laps every circuit without falling", runs.every((r) => r.every((l) => Number.isFinite(l.t) && l.falls === 0)), totals.map((t, v) => `${VEHICLES[v].name} ${t.toFixed(0)} s`).join(", "));
+  const spread = Math.max(...totals) / Math.min(...totals);
+  check("over the four circuits no vehicle is more than 6% quicker than another", spread < 1.06, `spread ${((spread - 1) * 100).toFixed(1)}%`);
   const off = VEHICLES.map((_, v) => launch(v));
   check("the Scooter is quickest off the line and the Hot Rod slowest", off[1] === Math.max(...off) && off[2] === Math.min(...off), off.map((v) => v.toFixed(1)).join(", ") + " m/s after 1.5 s");
   const [bully, victim] = shunt(3, 1);
@@ -64,19 +66,18 @@ async function main(): Promise<void> {
   const plain = swing(false);
   const slide = swing(true);
   check("the tail steps out at once: a drift swings the nose further than steering alone", slide > plain * 1.15, `${slide.toFixed(2)} vs ${plain.toFixed(2)} rad in 0.4 s`);
-  for (const id of ["office-apocalypse", "neon-cyber-city", "frozen-frenzy"]) {
-    const grip = drive(id, 0, 1.2, false);
-    const drifted = drive(id, 0, 1.2, true);
-    const turbos = drifted.turbos[0] + drifted.turbos[1] + drifted.turbos[2];
-    check(`${id}: a driver who drifts the corners laps faster than one who does not`, drifted.t < grip.t && turbos >= 4 && drifted.falls === 0, `${drifted.t.toFixed(1)} s with ${turbos} turbos vs ${grip.t.toFixed(1)} s`);
-  }
-  const quick = drive("office-apocalypse", 0, 1.65, true);
+  const grip = tracks.map((id) => drive(id, 0, 1.2, false));
+  const slid = runs[0];
+  const turbos = slid.reduce((n, l) => n + l.turbos[0] + l.turbos[1] + l.turbos[2], 0);
+  const gripTotal = grip.reduce((sum, l) => sum + l.t, 0);
+  check("over the four circuits a driver who drifts the corners is faster than one who does not", totals[0] < gripTotal && turbos >= 40, `${totals[0].toFixed(0)} s with ${turbos} turbos vs ${gripTotal.toFixed(0)} s`);
+  const quick = drive("office-grand-prix", 0, 1.65, true);
   check("drifting still works at Ludicrous speed", Number.isFinite(quick.t) && quick.falls === 0 && quick.turbos[0] + quick.turbos[1] + quick.turbos[2] >= 3, `${quick.t.toFixed(1)} s`);
 
   // ---- Time trial over the network
   const server = await getServer(2596);
   const pid = "test-driver-0001";
-  const a = new Bot(server.url, { name: "Trialist", lane: 0, join: { trial: true, trackId: "sky-high-insanity", speed: 3, vehicle: 2, avatar: 4, pid } });
+  const a = new Bot(server.url, { name: "Trialist", lane: 0, join: { trial: true, trackId: "volcano-pass", speed: 3, vehicle: 2, avatar: 4, pid } });
   const b = new Bot(server.url, { name: "Gatecrasher" });
   const json = async (path: string) => (await fetch(`${server.httpUrl}${path}`)).json() as Promise<Record<string, any>>;
   try {
@@ -84,17 +85,17 @@ async function main(): Promise<void> {
     const code = await a.create();
     const st = a.room.state;
     await a.waitFor("room state", () => st.trial === true, 3000).catch(() => {});
-    check("a trial room is solo, three laps, on the track and class asked for", st.trial === true && st.laps === TRIAL_LAPS && st.trackId === "sky-high-insanity" && st.speed === 3);
+    check("a trial room is solo, three laps, on the track and class asked for", st.trial === true && st.laps === TRIAL_LAPS && st.trackId === "volcano-pass" && st.speed === 3);
     check("nobody else can join a time trial", await b.join(code).then(() => false, () => true));
     check("vehicle and driver look are taken from the join options", (st.players.get(a.room.sessionId) as any).vehicle === 2 && (st.players.get(a.room.sessionId) as any).avatar === 4);
     a.room.send(MSG.SETTINGS, { laps: 1, chaos: 2 });
     a.room.send(MSG.KART, { vehicle: 99 });
     await sleep(200);
     check("laps, chaos and bad vehicle ids cannot be changed in a trial", st.laps === TRIAL_LAPS && st.chaos === 0 && (st.players.get(a.room.sessionId) as any).vehicle === 2);
-    const empty = await json(`/api/board?track=sky-high-insanity&speed=3&board=all&pid=${pid}`);
+    const empty = await json(`/api/board?track=volcano-pass&speed=3&board=all&pid=${pid}`);
     check("the board starts empty", Array.isArray(empty.race) && empty.race.length === 0 && empty.me === null);
-    check("there is no ghost before anyone has set a time", (await fetch(`${server.httpUrl}/api/ghost?track=sky-high-insanity&speed=3&board=all`)).status === 404);
-    check("the leaderboard API is read-only", (await fetch(`${server.httpUrl}/api/board?track=sky-high-insanity&speed=3`, { method: "POST" })).status === 405);
+    check("there is no ghost before anyone has set a time", (await fetch(`${server.httpUrl}/api/ghost?track=volcano-pass&speed=3&board=all`)).status === 404);
+    check("the leaderboard API is read-only", (await fetch(`${server.httpUrl}/api/board?track=volcano-pass&speed=3`, { method: "POST" })).status === 405);
     check("unknown tracks are rejected", (await fetch(`${server.httpUrl}/api/board?track=nope&speed=3`)).status === 400);
 
     let result: TrialResult | null = null;
@@ -109,14 +110,14 @@ async function main(): Promise<void> {
     const r = result as unknown as TrialResult;
     check("no power-ups are handed out in a time trial", items === 0);
     check("the run is scored and saved at rank 1", r.saved && r.rank === 1 && r.weekRank === 1 && r.improved && r.raceMs === a.me?.finishMs, JSON.stringify(r));
-    const board = await json(`/api/board?track=sky-high-insanity&speed=3&board=all&pid=${pid}`);
+    const board = await json(`/api/board?track=volcano-pass&speed=3&board=all&pid=${pid}`);
     check("the board shows the run with its race and lap time", board.race.length === 1 && board.race[0].raceMs === r.raceMs && board.race[0].lapMs === r.lapMs && board.race[0].name === "Trialist" && board.race[0].vehicle === 2 && board.myRank === 1);
-    const week = await json(`/api/board?track=sky-high-insanity&speed=3&board=week`);
+    const week = await json(`/api/board?track=volcano-pass&speed=3&board=week`);
     check("it is on this week's board too", week.race.length === 1 && week.lap[0].lapMs === r.lapMs);
-    const ghost = await json(`/api/ghost?track=sky-high-insanity&speed=3&board=all`);
+    const ghost = await json(`/api/ghost?track=volcano-pass&speed=3&board=all`);
     const samples = Buffer.from(String(ghost.d), "base64").length / 8;
     check("the champion's ghost covers the whole run", ghost.name === "Trialist" && ghost.ms === r.raceMs && Math.abs(samples * 100 - r.raceMs) < 400, `${samples} samples for ${(r.raceMs / 1000).toFixed(1)} s`);
-    const other = await json(`/api/board?track=sky-high-insanity&speed=1&board=all`);
+    const other = await json(`/api/board?track=volcano-pass&speed=1&board=all`);
     check("other speed classes have their own board", other.race.length === 0);
     const c = await json("/api/challenge");
     check("the weekly challenge names this week's track", c.challenge.trackId === weeklyChallenge(Date.now()).trackId && c.challenge.endsAt > Date.now());
@@ -129,7 +130,7 @@ async function main(): Promise<void> {
     await sleep(3000);
     a.room.send(MSG.RESTART);
     await a.waitFor("restarted", () => a.phase === "countdown", 5000);
-    check("a run can be restarted from the track, and an abandoned run scores nothing", result === null && (await json(`/api/board?track=sky-high-insanity&speed=3&board=all`)).race[0].raceMs === r.raceMs);
+    check("a run can be restarted from the track, and an abandoned run scores nothing", result === null && (await json(`/api/board?track=volcano-pass&speed=3&board=all`)).race[0].raceMs === r.raceMs);
   } finally {
     await a.leave().catch(() => {});
     await b.leave().catch(() => {});

@@ -3,7 +3,7 @@
  * scripted kart round each track with the same step function the server uses.
  *   npm run test:physics -w @office-kart/game-server
  */
-import { DT, INPUT_BITS, KART, SURFACE_TYPES, TRACK_DEFS, angleDiff, createKartState, decodeInput, getTrack, placeOnGrid, stepKart, wrapDelta, type KartInput, type Track } from "@office-kart/shared";
+import { DT, INPUT_BITS, KART, SURFACE_TYPES, TEST_TRACK_DEFS, TRACK_DEFS, angleDiff, createKartState, decodeInput, getTrack, placeOnGrid, stepKart, wrapDelta, type KartInput, type Track } from "@office-kart/shared";
 
 let failed = false;
 function check(name: string, ok: boolean, detail = ""): void {
@@ -76,7 +76,7 @@ function drive(track: Track, opts: { lane?: number; throttle?: (pos: number) => 
   return run;
 }
 
-for (const id of Object.keys(TRACK_DEFS)) {
+for (const id of [...Object.keys(TRACK_DEFS), ...Object.keys(TEST_TRACK_DEFS)]) {
   const track = getTrack(id);
   const run = drive(track);
   const timed = track.hazards.some((h) => h.def.kind === "collapse");

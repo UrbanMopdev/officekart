@@ -324,3 +324,180 @@ export function glowTexture(): THREE.CanvasTexture {
   g.fillRect(0, 0, 128, 128);
   return finish(c, false);
 }
+
+/**
+ * Road surfaces other than asphalt. u runs across the patch and v along the road; the tile is square
+ * and repeats. Index matches SURFACE_TYPES.
+ */
+export function surfaceTexture(type: number): THREE.CanvasTexture {
+  const S = 256;
+  const [c, g] = canvas(S, S);
+  const r = rng(1000 + type * 77);
+  const dots = (n: number, colors: string[], min: number, max: number, alpha = 1) => {
+    g.globalAlpha = alpha;
+    for (let i = 0; i < n; i++) {
+      g.fillStyle = colors[Math.floor(r() * colors.length)];
+      g.beginPath();
+      g.arc(r() * S, r() * S, min + r() * (max - min), 0, Math.PI * 2);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+  };
+  /** Soft-edged blobs, drawn again one tile over so the texture wraps without a seam. */
+  const blobs = (n: number, color: string, min: number, max: number, alpha: number) => {
+    for (let i = 0; i < n; i++) {
+      const x = r() * S;
+      const y = r() * S;
+      const rad = min + r() * (max - min);
+      for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) {
+        const grad = g.createRadialGradient(x + ox, y + oy, rad * 0.2, x + ox, y + oy, rad);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        g.globalAlpha = alpha;
+        g.fillStyle = grad;
+        g.fillRect(x + ox - rad, y + oy - rad, rad * 2, rad * 2);
+      }
+    }
+    g.globalAlpha = 1;
+  };
+  /** Two tyre tracks running along the road. */
+  const ruts = (color: string, alpha: number) => {
+    for (const x of [S * 0.3, S * 0.7]) {
+      const grad = g.createLinearGradient(x - 22, 0, x + 22, 0);
+      grad.addColorStop(0, "rgba(0,0,0,0)");
+      grad.addColorStop(0.5, color);
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      g.globalAlpha = alpha;
+      g.fillStyle = grad;
+      g.fillRect(x - 22, 0, 44, S);
+    }
+    g.globalAlpha = 1;
+  };
+  const fill = (color: string) => {
+    g.fillStyle = color;
+    g.fillRect(0, 0, S, S);
+  };
+  switch (type) {
+    case 1: // dirt
+      fill("#9b7647");
+      blobs(26, "#7d5c34", 18, 46, 0.5);
+      blobs(18, "#b8915c", 14, 34, 0.45);
+      ruts("#6e5030", 0.55);
+      dots(520, ["#6b4d2b", "#b08a57", "#84633a"], 0.6, 1.8, 0.8);
+      dots(34, ["#c9c2b4", "#8c867a"], 1.6, 3.6);
+      break;
+    case 2: // mud
+      fill("#4b2f1a");
+      blobs(22, "#6a4627", 16, 40, 0.5);
+      blobs(16, "#24150a", 16, 44, 0.85);
+      ruts("#2a180c", 0.6);
+      dots(260, ["#2b1a0d", "#6f4a2a"], 0.7, 2.2, 0.8);
+      // wet highlights
+      g.strokeStyle = "rgba(255,236,210,0.28)";
+      g.lineWidth = 1.6;
+      for (let i = 0; i < 26; i++) {
+        const x = r() * S;
+        const y = r() * S;
+        g.beginPath();
+        g.arc(x, y, 6 + r() * 16, r() * 6, r() * 6 + 0.9);
+        g.stroke();
+      }
+      break;
+    case 3: { // ice
+      const grad = g.createLinearGradient(0, 0, S, S);
+      grad.addColorStop(0, "#d9f3ff");
+      grad.addColorStop(0.5, "#b4e1f7");
+      grad.addColorStop(1, "#d2efff");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, S, S);
+      blobs(14, "#ffffff", 20, 60, 0.5);
+      blobs(10, "#7fc4e8", 20, 50, 0.4);
+      g.lineCap = "round";
+      for (let i = 0; i < 16; i++) {
+        let x = r() * S;
+        let y = r() * S;
+        g.strokeStyle = `rgba(255,255,255,${0.5 + r() * 0.4})`;
+        g.lineWidth = 0.8 + r() * 1.4;
+        g.beginPath();
+        g.moveTo(x, y);
+        let a = r() * Math.PI * 2;
+        for (let k = 0; k < 5; k++) {
+          a += (r() - 0.5) * 1.4;
+          x += Math.cos(a) * (10 + r() * 22);
+          y += Math.sin(a) * (10 + r() * 22);
+          g.lineTo(x, y);
+        }
+        g.stroke();
+      }
+      break;
+    }
+    case 4: // snow
+      fill("#f3f7fc");
+      blobs(26, "#cbd9ea", 14, 40, 0.5);
+      blobs(18, "#ffffff", 14, 36, 0.8);
+      ruts("#c3d2e4", 0.6);
+      dots(160, ["#ffffff"], 0.5, 1.3);
+      dots(120, ["#b9c9dc"], 0.6, 1.6, 0.6);
+      break;
+    case 5: // sand
+      fill("#dfc27a");
+      blobs(20, "#c9a95f", 16, 44, 0.5);
+      g.strokeStyle = "rgba(160,125,60,0.5)";
+      g.lineWidth = 2;
+      for (let y = 8; y < S; y += 16) {
+        g.beginPath();
+        for (let x = 0; x <= S; x += 8) g.lineTo(x, y + Math.sin((x / S) * Math.PI * 4 + y) * 3);
+        g.stroke();
+      }
+      dots(300, ["#f0dba0", "#b8974f"], 0.5, 1.4, 0.8);
+      break;
+    case 6: // boost road
+      fill("#0b5f78");
+      g.strokeStyle = "#7df3ff";
+      g.lineWidth = 22;
+      for (let i = -1; i < 3; i++) {
+        const y = S - i * 128;
+        g.beginPath();
+        g.moveTo(30, y);
+        g.lineTo(S / 2, y - 60);
+        g.lineTo(S - 30, y);
+        g.stroke();
+      }
+      break;
+    case 7: { // oil
+      fill("#0a0a12");
+      const hues = ["#7c3aed", "#14b8a6", "#ec4899", "#3b82f6", "#eab308"];
+      g.lineWidth = 5;
+      for (let i = 0; i < 26; i++) {
+        g.strokeStyle = hues[i % hues.length];
+        g.globalAlpha = 0.16 + r() * 0.22;
+        g.beginPath();
+        g.ellipse(r() * S, r() * S, 16 + r() * 50, 8 + r() * 26, r() * Math.PI, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.globalAlpha = 1;
+      blobs(10, "#ffffff", 8, 22, 0.16);
+      break;
+    }
+    default: // conveyor belts
+      fill("#2a2f37");
+      g.fillStyle = "#171a20";
+      for (let y = 0; y < S; y += 32) g.fillRect(0, y, S, 5);
+      g.fillStyle = "#3a4049";
+      for (let y = 5; y < S; y += 32) g.fillRect(0, y, S, 2);
+      g.strokeStyle = "#facc15";
+      g.lineWidth = 12;
+      for (let i = -1; i < 3; i++) {
+        const y = S - i * 128 - 30;
+        g.beginPath();
+        g.moveTo(70, y);
+        g.lineTo(S / 2, y - 44);
+        g.lineTo(S - 70, y);
+        g.stroke();
+      }
+      g.fillStyle = "#111318";
+      g.fillRect(0, 0, 12, S);
+      g.fillRect(S - 12, 0, 12, S);
+  }
+  return finish(c);
+}

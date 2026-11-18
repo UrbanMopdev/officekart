@@ -11,7 +11,7 @@ import type { Track, TrackTheme } from "@office-kart/shared";
 import { net } from "../net/connection";
 import { useStore } from "../store";
 import { Builder, disposeTree } from "./builder";
-import { bannerTexture, boostTexture, checkerTexture, chevronBoardTexture, roadTexture, turfTexture, type RoadStyle } from "./textures";
+import { bannerTexture, boostTexture, checkerTexture, chevronBoardTexture, roadTexture, surfaceTexture, turfTexture, type RoadStyle } from "./textures";
 
 interface Palette {
   road: RoadStyle;
@@ -52,7 +52,6 @@ const TINTS: Record<string, Partial<Palette>> = {
 };
 
 /** Overlay colour for each surface type (index matches SURFACE_TYPES). */
-const SURFACE_COLORS = ["#2d313c", "#a8834f", "#5a3a1f", "#bfe8ff", "#f3f7fd", "#e3cb8a", "#22d3ee", "#1a1026", "#4b5563", "#7c2d12"];
 
 const PALETTES: Record<string, Palette> = {
   alpine: {
@@ -153,6 +152,66 @@ export function strip(track: Track, latA: number, yA: number, latB: number, yB: 
   geo.setAttribute("position", new THREE.BufferAttribute(pos.subarray(0, p), 3));
   if (uv) geo.setAttribute("uv", new THREE.BufferAttribute(uv.subarray(0, u), 2));
   if (col) geo.setAttribute("color", new THREE.BufferAttribute(col.subarray(0, c), 3));
+  return geo;
+}
+
+/** How each surface type is lit. Index matches SURFACE_TYPES. */
+const SURFACE_LOOK: { rough: number; metal: number; glow?: boolean; scroll?: boolean }[] = [
+  { rough: 0.8, metal: 0 },
+  { rough: 0.95, metal: 0 }, // dirt
+  { rough: 0.3, metal: 0 }, // mud: wet
+  { rough: 0.07, metal: 0.15 }, // ice
+  { rough: 0.9, metal: 0 }, // snow
+  { rough: 0.95, metal: 0 }, // sand
+  { rough: 0.4, metal: 0, glow: true, scroll: true }, // boost road
+  { rough: 0.05, metal: 0.55 }, // oil
+  { rough: 0.6, metal: 0.2, scroll: true }, // conveyor
+  { rough: 0.6, metal: 0.2, scroll: true }, // conveyor, backward
+];
+
+/**
+ * One surface patch: a textured band on the road that fades out at its ends and along any edge
+ * that is not the edge of the road, so it reads as part of the surface instead of a painted block.
+ */
+function zoneGeometry(track: Track, z: { i0: number; i1: number; latMin: number; latMax: number; type: number }, road: number): THREE.BufferGeometry {
+  const { n, px, pz, nx, nz, spacing } = track;
+  const a = Math.max(-road + 0.35, z.latMin);
+  const b = Math.min(road - 0.35, z.latMax);
+  const count = (((z.i1 - z.i0) % n) + n) % n;
+  const feather = Math.min(1.4, (b - a) / 4);
+  // Lateral stops: [offset, alpha]. Edges that sit on the road's own edge stay solid.
+  const stops: [number, number][] = [[a, z.latMin <= -road + 0.5 ? 1 : 0], [a + feather, 1], [b - feather, 1], [b, z.latMax >= road - 0.5 ? 1 : 0]];
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const col: number[] = [];
+  const tile = 7.5;
+  const back = z.type === 9;
+  const put = (i: number, s: [number, number], along: number, fade: number) => {
+    pos.push(px[i] + nx[i] * s[0], 0.078 + track.hy[i] + s[0] * track.bankT[i], pz[i] + nz[i] * s[0]);
+    uv.push((s[0] - a) / tile, ((back ? -1 : 1) * along * spacing) / tile);
+    col.push(1, 1, 1, s[1] * fade);
+  };
+  for (let k = 0; k < count; k++) {
+    const i = (z.i0 + k) % n;
+    const j = (i + 1) % n;
+    if (track.gap[i] || track.dyn[i]) continue;
+    const f0 = Math.min(1, k / 3, (count - k) / 3);
+    const f1 = Math.min(1, (k + 1) / 3, (count - k - 1) / 3);
+    for (let s = 0; s < 3; s++) {
+      const l = stops[s];
+      const r = stops[s + 1];
+      put(i, l, k, f0);
+      put(i, r, k, f0);
+      put(j, l, k + 1, f1);
+      put(i, r, k, f0);
+      put(j, r, k + 1, f1);
+      put(j, l, k + 1, f1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 4));
   return geo;
 }
 
@@ -287,29 +346,30 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     )!;
     if (pal.ledGlow > 0) group.add(new THREE.Mesh(ledGeo, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, side: THREE.DoubleSide })));
 
-    // --- Surface patches (ice, mud, dirt, snow, sand, boost road)
+    // --- Surface patches (ice, mud, dirt, snow, sand, oil, belts, boost road), textured and feathered into the road
+    const zoneScroll: THREE.Texture[] = [];
     if (track.zones.length) {
-      const solid: THREE.BufferGeometry[] = [];
-      const glow: THREE.BufferGeometry[] = [];
+      const byType = new Map<number, THREE.BufferGeometry[]>();
       for (const z of track.zones) {
-        const inside = (i: number) => (z.i0 <= z.i1 ? i >= z.i0 && i < z.i1 : i >= z.i0 || i < z.i1);
-        const a = Math.max(-road + 0.4, z.latMin);
-        const b2 = Math.min(road - 0.4, z.latMax);
-        const boost = z.type === 6;
-        const base = new THREE.Color(SURFACE_COLORS[z.type]);
-        const alt = base.clone().multiplyScalar(boost ? 0.35 : 0.9);
-        const hot = base.clone().multiplyScalar(1.9);
-        const belt = z.type === 8 || z.type === 9;
-        (boost ? glow : solid).push(strip(track, a, 0.075, b2, 0.075, { skip: (i) => !inside(i), color: (i) => (boost ? (i % 2 ? hot : alt) : belt ? (i % 2 ? base : alt.clone().multiplyScalar(0.6)) : Math.floor(i / 3) % 2 ? base : alt) }));
+        const list = byType.get(z.type) ?? [];
+        byType.set(z.type, list);
+        list.push(zoneGeometry(track, z, road));
       }
-      if (solid.length) {
-        const g = mergeGeometries(solid, false)!;
+      for (const [type, geos] of byType) {
+        const look = SURFACE_LOOK[type] ?? SURFACE_LOOK[1];
+        // Both belt directions share one texture; the backward belt's geometry runs the other way.
+        const tex = keep(surfaceTexture(type === 9 ? 8 : type));
+        const g = mergeGeometries(geos, false)!;
         g.computeVertexNormals();
-        const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32 }));
+        const mat = look.glow
+          ? new THREE.MeshBasicMaterial({ map: tex, vertexColors: true, transparent: true, depthWrite: false, toneMapped: false, color: new THREE.Color(1.7, 1.7, 1.7) })
+          : new THREE.MeshStandardMaterial({ map: tex, vertexColors: true, transparent: true, depthWrite: false, roughness: look.rough, metalness: look.metal, envMapIntensity: look.rough < 0.2 ? 1.6 : 1 });
+        const m = new THREE.Mesh(g, mat);
         m.receiveShadow = true;
+        m.renderOrder = 2;
         group.add(m);
+        if (look.scroll) zoneScroll.push(tex);
       }
-      if (glow.length) group.add(new THREE.Mesh(mergeGeometries(glow, false)!, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })));
     }
 
     // --- Start line and gantry
@@ -398,7 +458,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
       group.add(boards);
     }
 
-    scrollers.current = [padTex];
+    scrollers.current = [padTex, ...zoneScroll];
     group.userData.textures = textures;
     return group;
   }, [track, theme]);

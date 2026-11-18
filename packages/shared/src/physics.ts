@@ -405,7 +405,9 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
       const sx = vx - wnx * into;
       const sz = vz - wnz * into;
       const sl = Math.hypot(sx, sz);
-      const kept = sl * 0.93;
+      // A graze costs little; driving into a wall costs a lot. Corners have to be driven, not bounced round.
+      const kept = sl * (0.93 - Math.min(0.4, Math.max(0, into - 3) * 0.035));
+      if (into > 9) s.boost = 0;
       if (s.speed >= 0) {
         if (sl > 0.01) s.vAngle = Math.atan2(sx, sz);
         s.speed = kept;
@@ -413,7 +415,7 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
         if (sl > 0.01) s.vAngle = Math.atan2(-sx, -sz);
         s.speed = -kept;
       }
-      s.heading += angleDiff(s.vAngle, s.heading) * 0.25;
+      s.heading += angleDiff(s.vAngle, s.heading) * 0.14;
       if (s.driftDir !== 0 && into > 6) {
         s.driftDir = 0;
         s.driftCharge = 0;

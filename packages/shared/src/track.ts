@@ -303,14 +303,6 @@ export function buildTrack(def: TrackDef, targetSpacing = 2): Track {
       hy[i] = a[1] + (b[1] - a[1]) * t;
     }
   }
-  const slope = new Float64Array(n);
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (let i = 0; i < n; i++) {
-    slope[i] = (hy[(i + 1) % n] - hy[(i - 1 + n) % n]) / (2 * spacing);
-    minY = Math.min(minY, hy[i]);
-    maxY = Math.max(maxY, hy[i]);
-  }
   const bankT = new Float64Array(n);
   if (def.autoBank) {
     const raw = new Float64Array(n);
@@ -319,13 +311,26 @@ export function buildTrack(def: TrackDef, targetSpacing = 2): Track {
       const c = (i + 2) % n;
       // Signed curvature: positive when the road bends right. Raise the outside edge.
       const curve = ((tx[c] - tx[a]) * nx[i] + (tz[c] - tz[a]) * nz[i]) / (4 * spacing);
-      raw[i] = -Math.max(-0.3, Math.min(0.3, curve * 7.5)) * def.autoBank;
+      // Banking is gentle: enough to see and feel, not enough to turn every corner exit into a ramp.
+      raw[i] = -Math.max(-0.085, Math.min(0.085, curve * 3)) * def.autoBank;
     }
     for (let i = 0; i < n; i++) {
       let sum = 0;
       for (let o = -8; o <= 8; o++) sum += raw[(i + o + n) % n];
       bankT[i] = sum / 17;
     }
+    // A banked corner tilts about its inside edge: the outside rises and the inside stays at the
+    // height the layout gave it, so the low side of the road never sinks into the ground.
+    // (Barely-there banking on a near-straight is not lifted, which keeps the grid level.)
+    for (let i = 0; i < n; i++) hy[i] += Math.max(0, Math.abs(bankT[i]) - 0.015) * def.wallHalfWidth;
+  }
+  const slope = new Float64Array(n);
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    slope[i] = (hy[(i + 1) % n] - hy[(i - 1 + n) % n]) / (2 * spacing);
+    minY = Math.min(minY, hy[i]);
+    maxY = Math.max(maxY, hy[i]);
   }
   const idxOf = (at: number) => ((Math.round(at * n) % n) + n) % n;
   const gap = new Uint8Array(n);
