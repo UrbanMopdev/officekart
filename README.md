@@ -138,9 +138,16 @@ wing) differ in finish. The Motorbike is built in code from smooth solids on the
 in leathers. Cars are closed, so the driver choice is not visible in them.
 
 **Views.** C (or the button under the ping badge) switches between the chase camera and the driver's
-seat. In first person the car's own glass is hidden and its paint is drawn on both faces; cars that came
-with an interior show a dashboard and pillars, the concept car uses a bonnet camera. The choice is saved
-with the other settings.
+seat. In first person a car's outside is swapped for a built interior (`apps/web/src/game/cockpit.ts`):
+dashboard, instrument screen with live speed and gear, a steering wheel that follows the steering, pillars,
+mirrors and the bonnet in the car's paint, sized to each car. The camera is fixed to the car, so it pitches
+on hills, leans on banking and slides with the tail, with a little head turn into corners and a surface
+buzz that is rougher off the tarmac; spins and stunts are not passed on to the camera. The motorbike keeps
+its own bodywork. The choice is saved with the other settings.
+
+**Power-ups in reserve.** A racer holds one power-up and up to two more in reserve (`item2`, `item3` in
+the room state); the next moves up when the hand is empty. The spinning-bar hazards and the Meteor Shower
+event have been retired.
 
 **Classics.** VW Golf II, DeLorean DMC-12 (brushed steel, tinted in the player's colour), Datsun 280Z and
 Cadillac Coupe DeVille, all CC BY 4.0, bring the garage to twelve vehicles.

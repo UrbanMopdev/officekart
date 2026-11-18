@@ -348,7 +348,8 @@ export const CHAOS_PACE = [
 ];
 
 export function pickEvent(previous: number): number {
-  const all = [EVENT.LOW_GRAVITY, EVENT.SLIPPERY, EVENT.WIND, EVENT.FRENZY, EVENT.DOUBLE, EVENT.METEORS, EVENT.STORM];
+  // Meteor Shower is retired: it still exists, but is never drawn.
+  const all = [EVENT.LOW_GRAVITY, EVENT.SLIPPERY, EVENT.WIND, EVENT.FRENZY, EVENT.DOUBLE, EVENT.STORM];
   const pool = all.filter((e) => e !== previous);
   return pool[Math.floor(Math.random() * pool.length)];
 }

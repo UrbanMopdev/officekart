@@ -26,6 +26,9 @@ export class PlayerState extends Schema {
   @type("uint8") avatar = 0;
   @type("uint8") item = 0;
   @type("uint8") charges = 0;
+  /** Power-ups waiting in reserve behind the held one. */
+  @type("uint8") item2 = 0;
+  @type("uint8") item3 = 0;
   /** Running totals for this lobby session. */
   @type("uint16") wins = 0;
   @type("uint16") points = 0;

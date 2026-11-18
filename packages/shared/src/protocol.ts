@@ -121,6 +121,9 @@ export interface PlayerView {
   bestLapMs: number;
   item: number;
   charges: number;
+  /** Reserve power-ups, in the order they will come up. 0 = empty. */
+  item2: number;
+  item3: number;
   vehicle: number;
   avatar: number;
   wins: number;

@@ -54,6 +54,11 @@ const LIGHTING: Record<string, { sun: string; sunIntensity: number; dir: readonl
  * reflect real clouds) and is drawn behind it. The sun in LIGHTING points the
  * same way as the sun or moon in the photograph.
  */
+const FP_POS = new THREE.Vector3();
+const FP_QUAT = new THREE.Quaternion();
+const FP_TURN = new THREE.Quaternion();
+const FP_EULER = new THREE.Euler();
+
 const SKIES: Record<string, { name: string; env: number; backdrop: number }> = {
   frozen: { name: "day", env: 0.85, backdrop: 0.75 },
   volcano: { name: "ember", env: 1.5, backdrop: 0.6 },
@@ -86,7 +91,7 @@ export function World({ quality }: { quality: Quality }) {
   const fillB = useRef<THREE.PointLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
   const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean ; champ: Ghost | null; champVisual: KartVisual | null; champLook: { name: string; color: number; vehicle: number; avatar: number } | null }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, champ: null, champVisual: null, champLook: null });
-  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eye: [1.5, 0] as [number, number], lastY: 0, tip: 0 });
+  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
   const fogHome = useRef<{ color: THREE.Color; near: number; far: number } | null>(null);
@@ -288,8 +293,11 @@ export function World({ quality }: { quality: Quality }) {
       const camDist2 = cdx * cdx + cdz * cdz;
       v.setIdentity(p.name, p.color, !mine && camDist2 > 110);
       v.setStyle(p.vehicle, p.avatar);
-      if (mine) cam.current.eye = v.eye;
       v.setFirstPerson(mine && store.settings.view === "bonnet");
+      if (mine) {
+        cam.current.eyeNode = v.eyeNode;
+        cam.current.steer = v.steering;
+      }
       // Tilt the kart to the road under it: slope ahead gives pitch, banking gives roll.
       locate(track, sample.x, sample.z, v.hint, loc);
       v.hint = loc.idx;
@@ -536,23 +544,37 @@ export function World({ quality }: { quality: Quality }) {
       const jy = Math.sin(time * 47 + 1.3) * 0.03 * c.shake + Math.sin(time * 38) * 0.45 * c.jolt;
       // The camera sits closer and lower the faster the kart goes, and the view widens: both read as speed.
       const back = 8.8 - c.shake * 1.1 - Math.max(0, pace - 0.5) * 1.4 + c.air * 2.6;
-      if (settings.view === "bonnet") {
-        // First person: the driver's eyes, looking down the bonnet. The view turns with the car itself
-        // and tips with the road, so the nose stays put and the world moves.
-        const hx = Math.sin(focus.heading);
-        const hz = Math.cos(focus.heading);
-        const [eyeY, eyeZ] = c.eye;
-        const rise = Math.max(-0.35, Math.min(0.35, (focus.y - c.lastY) / Math.max(0.5, Math.abs(focus.speed) * dt + 1e-3)));
-        c.tip += ((Number.isFinite(rise) ? rise : 0) - c.tip) * (1 - Math.exp(-dt * 6));
-        c.lastY = focus.y;
-        const ey = focus.y + eyeY + jy * 0.4;
-        camera.position.set(focus.x + hx * eyeZ, ey, focus.z + hz * eyeZ);
-        camera.lookAt(focus.x + hx * (eyeZ + 12), ey - 0.9 + c.tip * 12, focus.z + hz * (eyeZ + 12));
-        fov = Math.min(100, 72 + pace * 12 + c.shake * 8);
+      if (settings.view === "bonnet" && c.eyeNode) {
+        // First person: the camera is the driver's head, fixed to the car. It pitches on hills,
+        // leans on banking and shakes with the surface; the head turns a little into each corner.
+        c.eyeNode.updateWorldMatrix(true, false);
+        c.eyeNode.getWorldPosition(FP_POS);
+        c.eyeNode.getWorldQuaternion(FP_QUAT);
+        const steerNow = Math.max(-1, Math.min(1, c.steer));
+        c.look += (steerNow * 0.2 - c.look) * (1 - Math.exp(-dt * 4));
+        FP_EULER.set(-0.03, Math.PI - c.look, 0, "YXZ");
+        FP_QUAT.multiply(FP_TURN.setFromEuler(FP_EULER));
+        // A fast, slightly lazy follow: the head lags the car by a few frames, which reads as weight.
+        if (c.fpFresh) camera.quaternion.copy(FP_QUAT);
+        else camera.quaternion.slerp(FP_QUAT, 1 - Math.exp(-dt * 22));
+        c.fpFresh = false;
+        // Road feel: a fine buzz that grows with speed, rougher off the tarmac, plus the jolts.
+        const buzz = (0.0035 + ((focus.flags & FLAG.OFFROAD) !== 0 ? 0.016 : 0)) * Math.min(1, Math.abs(focus.speed) / 30) + c.shake * 0.02;
+        camera.position.set(FP_POS.x + Math.sin(time * 61) * buzz * 0.6, FP_POS.y + Math.sin(time * 47 + 1.3) * buzz + jy * 0.25, FP_POS.z + Math.cos(time * 53) * buzz * 0.6);
+        fov = Math.min(98, 74 + pace * 11 + c.shake * 6);
+        if (camera.near !== 0.1) {
+          camera.near = 0.1;
+          camera.updateProjectionMatrix();
+        }
       } else {
         camera.position.set(focus.x - fx * back + fz * jx, c.y + 4.1 + jy + c.air * 1.4, focus.z - fz * back - fx * jx);
         camera.lookAt(focus.x + fx * 6, focus.y + 1.6, focus.z + fz * 6);
         fov = Math.min(94, 58 + pace * 15 + c.shake * 9 + (net.predictor.ctx.speed - 1) * 9);
+        c.fpFresh = true;
+        if (camera.near !== 0.4) {
+          camera.near = 0.4;
+          camera.updateProjectionMatrix();
+        }
       }
       lookX = focus.x + fx * 20;
       lookZ = focus.z + fz * 20;

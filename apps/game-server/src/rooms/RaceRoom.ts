@@ -95,6 +95,8 @@ interface Racer {
   finished: boolean;
   item: number;
   charges: number;
+  /** Power-ups held in reserve, used in the order they were collected. */
+  bag: number[];
   useHeld: boolean;
   itemSpin: boolean;
   gridPlace: number;
@@ -126,6 +128,9 @@ const q16 = (v: number) => Math.max(-32767, Math.min(32767, Math.round(v)));
 function newMeta(): ClientMeta {
   return { inputBucket: new TokenBucket(90, 60), msgBucket: new TokenBucket(30, 10), strikes: 0, kicked: false, pid: "" };
 }
+
+/** How many power-ups a racer can carry in reserve behind the one in hand. */
+const BAG_SIZE = 2;
 
 export class RaceRoom extends Room<RaceState> {
   /** Set on SIGTERM: no new rooms are created and no new races start. */
@@ -455,6 +460,8 @@ export class RaceRoom extends Room<RaceState> {
       p.place = 0;
       p.item = 0;
       p.charges = 0;
+      p.item2 = 0;
+      p.item3 = 0;
       p.vote = "";
       p.note = "";
       if (p.connected) entrants.push(p);
@@ -474,6 +481,7 @@ export class RaceRoom extends Room<RaceState> {
         input: { throttle: 0, steer: 0, drift: false, reset: false, use: false },
         item: 0,
         charges: 0,
+        bag: [],
         useHeld: false,
         itemSpin: false,
         gridPlace: gridPos + 1,
@@ -702,7 +710,7 @@ export class RaceRoom extends Room<RaceState> {
     for (const r of order) {
       if (r.finished) continue;
       const k = r.kart;
-      if (r.item === 0) {
+      if (r.item === 0 || r.bag.length < BAG_SIZE) {
         for (let b = 0; b < this.track.boxes.length; b++) {
           if (this.boxReady[b] > this.raceTick) continue;
           const box = this.track.boxes[b];
@@ -710,8 +718,11 @@ export class RaceRoom extends Room<RaceState> {
           const dz = k.z - box.z;
           if (dx * dx + dz * dz < 6.8 && Math.abs(k.y - box.y) < 3.5) {
             const p = this.state.players.get(r.id);
-            r.item = rollItem(p ? p.place : 1, live);
-            r.charges = r.item === 7 ? 3 : 1;
+            const rolled = rollItem(p ? p.place : 1, live);
+            if (r.item === 0) {
+              r.item = rolled;
+              r.charges = rolled === 7 ? 3 : 1;
+            } else r.bag.push(rolled);
             this.boxReady[b] = this.raceTick + (this.ctx.event === EVENT.DOUBLE && this.raceTick >= this.ctx.from ? 20 : 5 * TICK_RATE);
             this.broadcast(MSG.FX, { kind: "pickup", slot: r.slot, x: box.x, y: box.y, z: box.z });
             break;
@@ -720,10 +731,17 @@ export class RaceRoom extends Room<RaceState> {
       }
       if (r.input.use && !r.useHeld && r.item !== 0) this.items.use(r, order);
       r.useHeld = r.input.use;
+      // The next power-up in reserve moves up as soon as the hand is empty.
+      if (r.item === 0 && r.bag.length > 0) {
+        r.item = r.bag.shift()!;
+        r.charges = r.item === 7 ? 3 : 1;
+      }
       const p = this.state.players.get(r.id);
-      if (p && (p.item !== r.item || p.charges !== r.charges)) {
+      if (p && (p.item !== r.item || p.charges !== r.charges || p.item2 !== (r.bag[0] ?? 0) || p.item3 !== (r.bag[1] ?? 0))) {
         p.item = r.item;
         p.charges = r.charges;
+        p.item2 = r.bag[0] ?? 0;
+        p.item3 = r.bag[1] ?? 0;
       }
     }
     this.items.step(order);

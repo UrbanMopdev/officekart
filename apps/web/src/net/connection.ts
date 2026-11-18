@@ -103,6 +103,8 @@ function toView(state: any): RoomView {
       finishMs: p.finishMs,
       bestLapMs: p.bestLapMs,
       item: p.item ?? 0,
+      item2: p.item2 ?? 0,
+      item3: p.item3 ?? 0,
       vehicle: p.vehicle ?? 0,
       avatar: p.avatar ?? 0,
       charges: p.charges ?? 0,
@@ -168,7 +170,7 @@ class Net {
   startPreview(trackId: string, at: number): void {
     const track = getTrack(trackId);
     const players: PlayerView[] = ["You", "Priya", "Marcus", "Jo", "Sam", "Ines"].map((name, i) => ({
-      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, charges: 1, vehicle: (PREVIEW_VEH + i) % VEHICLES.length, avatar: i, wins: 0, points: 0, vote: "", note: "",
+      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, item2: 0, item3: 0, charges: 1, vehicle: (PREVIEW_VEH + i) % VEHICLES.length, avatar: i, wins: 0, points: 0, vote: "", note: "",
     }));
     useStore.getState().set({
       status: "connected",

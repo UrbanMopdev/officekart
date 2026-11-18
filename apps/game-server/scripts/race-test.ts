@@ -140,7 +140,9 @@ async function main(): Promise<void> {
     await Promise.all([host, b, c, cheat].map((x) => x.waitFor("results 2", () => x.phase === "results", 240_000)));
     check("second race completes", host.players.filter((p) => p.racing && p.finished).length === 4);
     const fair = cheat.me?.finishMs ?? 0;
-    check("flooding was no faster than the same kart playing fair", lapCheat > fair - 750, `flooding ${(lapCheat / 1000).toFixed(2)} s, fair ${(fair / 1000).toFixed(2)} s`);
+    // The two times come from different races with power-ups flying, and racers now carry three of
+    // them, so a few seconds either way is combat, not cheating. The hard limits are checked above.
+    check("flooding was no faster than the same kart playing fair", lapCheat > fair * 0.9, `flooding ${(lapCheat / 1000).toFixed(2)} s, fair ${(fair / 1000).toFixed(2)} s`);
     host.room.send(MSG.TO_LOBBY);
     await host.waitFor("lobby", () => host.phase === "lobby", 5000);
     check("host can return everyone to the lobby", [b, c, cheat].every((x) => x.phase === "lobby"));

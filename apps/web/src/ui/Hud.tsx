@@ -147,10 +147,18 @@ function EventBanner() {
   );
 }
 
-function ItemSlot({ item, charges }: { item: number; charges: number }) {
+function ItemSlot({ item, charges, reserve }: { item: number; charges: number; reserve: number[] }) {
   const it = ITEMS[item];
   return (
     <div className="absolute left-1/2 top-[4.6rem] -translate-x-1/2 text-center">
+      {/* Reserve: the next two power-ups, waiting their turn. */}
+      <div className="absolute left-full top-1 ml-2 flex gap-1.5">
+        {reserve.map((r, i) => (
+          <div key={i} className={`flex h-10 w-10 items-center justify-center rounded-xl border-2 text-xl ${r ? "border-amber-300/70 bg-slate-900/70" : "border-white/15 bg-slate-900/30"}`}>
+            {ITEMS[r]?.icon}
+          </div>
+        ))}
+      </div>
       <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border-4 text-4xl ${item ? "animate-pop border-amber-300 bg-slate-900/75" : "border-white/25 bg-slate-900/40"}`} key={item}>
         {it?.icon}
         {charges > 1 && <span className="absolute -right-1 -top-1 rounded-full bg-amber-400 px-1.5 text-xs font-black text-slate-900">{charges}</span>}
@@ -209,7 +217,7 @@ export function Hud() {
       )}
       {!spectating && <Callouts />}
       {room.phase === "countdown" && !spectating && <RocketHint touchUi={compact} />}
-      {!compact && !trial && !spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} />}
+      {!compact && !trial && !spectating && !me?.finished && me && <ItemSlot item={me.item} charges={me.charges} reserve={[me.item2, me.item3]} />}
       <EventBanner />
       {watching && racers.length > 1 && (
         <div className="absolute inset-x-0 bottom-24 text-center">

@@ -3,6 +3,7 @@
  * kart; each kart only owns its paint materials, so twelve karts cost little.
  */
 import * as THREE from "three";
+import { buildCockpit, type Cockpit } from "./cockpit";
 import { carFinish, kitDriver, kitReady, kitVehicle, kitVersion, tintedMaterial, type KitVehicle } from "./models";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -397,22 +398,57 @@ export class KartVisual {
   /** Where the driver's eyes are, for the first-person view: height and distance ahead of centre. */
   eye: [number, number] = [1.5, 0];
   private firstPerson = false;
+  /** Where the front wheels are pointing, -1 (left) to 1 (right). */
+  get steering(): number {
+    return this.steer;
+  }
+  /** The camera sits on this in first person. */
+  eyeNode: THREE.Object3D = new THREE.Object3D();
+  private cockpit: Cockpit | null = null;
+  private cockpitSpec: { eyeHeight: number; front: number; halfWidth: number; scale: number } | null = null;
+  private bikeEye: THREE.Object3D | null = null;
 
-  /** From the driver's seat the car's own glass is taken out, so the view through the screen is clear. */
+  /**
+   * From the driver's seat a car swaps its outside for a built interior, so the view is the same
+   * quality in every car. The motorbike keeps its own bodywork: you see the tank, bars and screen.
+   */
   setFirstPerson(on: boolean): void {
     if (on === this.firstPerson && this.kitGlassFor === this.kit) return;
     this.firstPerson = on;
     this.kitGlassFor = this.kit;
-    // Paint is drawn on both faces from inside, so the bonnet and pillars are solid whichever way they were modelled.
-    for (const m of this.kitMats) {
-      m.side = on ? THREE.DoubleSide : THREE.FrontSide;
-      m.needsUpdate = true;
+    if (this.cockpit) {
+      this.group.remove(this.cockpit.group);
+      this.cockpit.dispose();
+      this.cockpit = null;
     }
+    if (this.cockpitSpec && this.kit) {
+      this.kit.visible = !on;
+      for (const m of this.kitMats) {
+        m.side = on ? THREE.DoubleSide : THREE.FrontSide;
+        m.needsUpdate = true;
+      }
+      if (on) {
+        this.cockpit = buildCockpit({ ...this.cockpitSpec, paint: this.kitMats[0] });
+        this.cockpit.group.scale.setScalar(this.cockpitSpec.scale);
+        this.group.add(this.cockpit.group);
+        this.eyeNode = this.cockpit.eye;
+      }
+      return;
+    }
+    if (this.kit) this.kit.visible = true;
     const glass = carFinish("glass");
     this.kit?.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh && (mesh.material === glass || mesh.userData.solid === glass)) mesh.visible = !on;
     });
+    if (on) {
+      if (!this.bikeEye) {
+        this.bikeEye = new THREE.Object3D();
+        this.body.add(this.bikeEye);
+      }
+      this.bikeEye.position.set(0, this.eye[0], this.eye[1]);
+      this.eyeNode = this.bikeEye;
+    }
   }
   private kitGlassFor: THREE.Group | null = null;
   private kitSecond: THREE.Color | null = null;
@@ -621,6 +657,7 @@ export class KartVisual {
     this.kitCar = !!v.car;
     if (v.bike) this.buildBike(kit, v);
     else if (v.car) this.buildCar(kit, v);
+    this.cockpitSpec = v.car && !v.bike ? { eyeHeight: v.car.top * 0.81 + v.car.trim.ride, front: (v.car.lamps?.front ?? 2.33) + v.car.offsetZ, halfWidth: v.car.lamps?.half ?? 1.0, scale: v.scale } : null;
     this.eye = v.bike ? [1.58 * v.scale, 0.3] : v.car ? (v.car.lamps ? [(v.car.top * 0.81 + v.car.trim.ride) * v.scale, -0.12 * v.scale] : [(1.03 + v.car.trim.ride) * v.scale, 0.95 * v.scale]) : [1.9, 0.2];
     const { material, tint } = v.car ? { material: null, tint: this.kitTint! } : tintedMaterial(v.material, v.paint);
     this.kitTint = tint;
@@ -923,6 +960,12 @@ export class KartVisual {
     const stretch = this.wheelie * 0.07 + (airborne ? 0.03 : 0);
     this.body.scale.set(1 - this.squash * 0.45, 1 + this.squash, 1 - this.squash * 0.45 + stretch);
     this.body.rotation.set(this.pitch - Math.sin(this.wheelie * Math.PI) * 0.13, this.slide + this.spinAngle, this.roll + this.trickAngle);
+    if (this.cockpit) {
+      // The cabin moves with the car (dive, squat, lean and slide) but is spared spins and stunts.
+      this.cockpit.group.rotation.set(this.pitch * 0.8, this.slide * 0.85, this.roll * 0.7);
+      this.cockpit.wheel.rotation.z = this.steer * 1.75;
+      this.cockpit.setSpeed(Math.abs(speed) * 3.6, (flags & FLAG.BOOST) !== 0);
+    }
     const moving = Math.abs(speed) > 1;
     const rumble = moving ? Math.sin(time * 47 + x) * 0.006 * Math.min(1, Math.abs(speed) / 20) : Math.sin(time * 31 + x) * 0.004;
     this.body.position.y = Math.sin(this.hop * Math.PI) * 0.6 + rumble + (boosting ? Math.sin(time * 70) * 0.012 : 0);
