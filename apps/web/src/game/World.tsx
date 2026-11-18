@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { worldBackdrop, worldSky } from "./assets";
+import { LapDelta } from "./delta";
 import { DEFAULT_TRACK_ID, FLAG, FX, KART, angleDiff, driftLevel, getTrack, locate } from "@office-kart/shared";
 import { net, type KartSample } from "../net/connection";
 import { useStore, type Quality } from "../store";
@@ -91,7 +92,7 @@ export function World({ quality }: { quality: Quality }) {
   const fillB = useRef<THREE.PointLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
   const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean ; champ: Ghost | null; champVisual: KartVisual | null; champLook: { name: string; color: number; vehicle: number; avatar: number } | null }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, champ: null, champVisual: null, champLook: null });
-  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true });
+  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true, delta: null as LapDelta | null, deltaFor: null as unknown });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
   const fogHome = useRef<{ color: THREE.Color; near: number; far: number } | null>(null);
@@ -672,6 +673,16 @@ export function World({ quality }: { quality: Quality }) {
     particles.glow.update(dt, pixelsPerUnit);
     particles.smoke.update(dt, pixelsPerUnit);
 
+    // --- Lap delta against your own best, measured every frame
+    if (driving) {
+      const state = net.predictor.state;
+      if (!c.delta || c.deltaFor !== track) {
+        c.delta = new LapDelta(track.def.id, net.predictor.ctx.speed);
+        c.deltaFor = track;
+      }
+      c.delta.update((((state.pos % track.length) + track.length) % track.length) / track.length, performance.now());
+    } else if (!net.predictor.state.speed && c.delta && store.room?.phase !== "racing") c.delta = null;
+
     // --- HUD numbers, ten times a second
     if (time - c.hudAt > 0.1) {
       c.hudAt = time;
@@ -682,8 +693,9 @@ export function World({ quality }: { quality: Quality }) {
       const level = driving && k.driftDir !== 0 ? driftLevel(k.driftCharge) : 0;
       const boosting = driving && k.boost > 0;
       const offroad = driving && k.offroad;
-      if (hud.speed !== speed || Math.abs(hud.driftCharge - charge) > 0.02 || hud.driftLevel !== level || hud.boosting !== boosting || hud.offroad !== offroad) {
-        store.set({ hud: { speed, driftCharge: charge, driftLevel: level, boosting, offroad } });
+      const delta = driving && c.delta && c.delta.value !== null ? Math.round(c.delta.value * 100) / 100 : null;
+      if (hud.speed !== speed || Math.abs(hud.driftCharge - charge) > 0.02 || hud.driftLevel !== level || hud.boosting !== boosting || hud.offroad !== offroad || hud.delta !== delta) {
+        store.set({ hud: { speed, driftCharge: charge, driftLevel: level, boosting, offroad, delta } });
       }
     }
   });

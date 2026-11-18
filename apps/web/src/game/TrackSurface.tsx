@@ -504,9 +504,12 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     group.add(gantry);
 
     // --- Boost pads
-    const padTex = keep(boostTexture(pal.pad[0], pal.pad[1]));
+    const padTex = keep(boostTexture(pal.pad[0], pal.pad[1], !!verge));
     padTex.repeat.set(1, 1.4);
-    const padMat = new THREE.MeshBasicMaterial({ map: padTex, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) });
+    // On the realistic circuits a boost strip is road paint with a faint glow, not a lit panel.
+    const padMat = verge
+      ? new THREE.MeshStandardMaterial({ map: padTex, transparent: true, roughness: 0.55, emissive: "#ffffff", emissiveMap: padTex, emissiveIntensity: 0.55, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false })
+      : new THREE.MeshBasicMaterial({ map: padTex, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) });
     for (const pad of track.pads) {
       const mid = Math.round((pad.i0 + pad.i1) / 2) % track.n;
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pad.halfWidth * 2, (pad.i1 - pad.i0) * track.spacing), padMat);

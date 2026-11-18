@@ -11,6 +11,8 @@ export interface HudState {
   driftLevel: number;
   boosting: boolean;
   offroad: boolean;
+  /** Seconds ahead (-) or behind (+) your best lap at the last split; null when there is nothing to compare. */
+  delta: number | null;
 }
 
 export interface Settings {
@@ -183,7 +185,7 @@ export const useStore = create<Store>((set) => ({
   error: null,
   toast: null,
   pingMs: 0,
-  hud: { speed: 0, driftCharge: 0, driftLevel: 0, boosting: false, offroad: false },
+  hud: { speed: 0, driftCharge: 0, driftLevel: 0, boosting: false, offroad: false, delta: null },
   quality: loadQuality() ?? detectQuality(),
   qualityLocked: loadQuality() !== null,
   setQuality(quality, manual) {

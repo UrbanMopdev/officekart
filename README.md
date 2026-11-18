@@ -145,6 +145,13 @@ on hills, leans on banking and slides with the tail, with a little head turn int
 buzz that is rougher off the tarmac; spins and stunts are not passed on to the camera. The motorbike keeps
 its own bodywork. The choice is saved with the other settings.
 
+**Lap delta.** `apps/web/src/game/delta.ts` times twenty splits round each lap and shows, under the
+best-lap line, how far ahead or behind your own best lap you are (green ahead, red behind). Best laps are
+kept per track and speed class in the browser.
+
+**Pickups and boost strips.** Item boxes are dark flight cases with a lit amber band and a marker light;
+on the realistic circuits boost pads are worn chevrons painted on the tarmac with a faint glow.
+
 **Power-ups in reserve.** A racer holds one power-up and up to two more in reserve (`item2`, `item3` in
 the room state); the next moves up when the hand is empty. The spinning-bar hazards and the Meteor Shower
 event have been retired.

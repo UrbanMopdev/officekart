@@ -255,6 +255,12 @@ export function Hud() {
       <div className="absolute left-1/2 top-4 -translate-x-1/2 text-center">
         <RaceTimer startAt={room.raceStartAt} frozenMs={me?.finished ? me.finishMs : 0} />
         {me && me.bestLapMs > 0 && <div className="text-outline text-sm font-bold text-white/85">Best lap {formatRaceTime(me.bestLapMs)}</div>}
+        {hud.delta !== null && !me?.finished && (
+          <div className={`text-outline font-mono text-lg font-black ${hud.delta <= 0 ? "text-emerald-300" : "text-rose-300"}`} title="Against your best lap here">
+            {hud.delta <= 0 ? "−" : "+"}
+            {Math.abs(hud.delta).toFixed(2)}
+          </div>
+        )}
         {champion && !me?.finished && (
           <div className="text-outline text-xs font-bold text-amber-200 tall:text-sm">
             👑 {champion.mine ? "Your record" : champion.name}: {formatRaceTime(champion.ms)}

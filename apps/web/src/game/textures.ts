@@ -156,11 +156,14 @@ export function checkerTexture(): THREE.CanvasTexture {
 }
 
 /** Scrolling chevrons for boost pads. Tiles vertically. */
-export function boostTexture(base: string, arrow: string): THREE.CanvasTexture {
+export function boostTexture(base: string, arrow: string, painted = false): THREE.CanvasTexture {
   const S = 256;
   const [c, g] = canvas(S, S);
-  g.fillStyle = base;
-  g.fillRect(0, 0, S, S);
+  // Painted: chevrons only, straight onto the tarmac. Otherwise a solid coloured panel.
+  if (!painted) {
+    g.fillStyle = base;
+    g.fillRect(0, 0, S, S);
+  }
   g.strokeStyle = arrow;
   g.lineWidth = 26;
   g.lineJoin = "miter";
@@ -171,6 +174,15 @@ export function boostTexture(base: string, arrow: string): THREE.CanvasTexture {
     g.lineTo(S / 2, y - 64);
     g.lineTo(S - 26, y);
     g.stroke();
+  }
+  if (painted) {
+    // Tyres have scrubbed the paint thin in places.
+    g.globalCompositeOperation = "destination-out";
+    for (let i = 0; i < 1500; i++) {
+      g.fillStyle = `rgba(0,0,0,${0.25 + Math.random() * 0.6})`;
+      g.fillRect(Math.random() * S, Math.random() * S, 1 + Math.random() * 5, 1 + Math.random() * 14);
+    }
+    g.globalCompositeOperation = "source-over";
   }
   return finish(c);
 }

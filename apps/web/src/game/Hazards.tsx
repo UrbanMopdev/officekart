@@ -79,6 +79,35 @@ function rollingBody(look: string, r: number): THREE.Object3D {
   return g;
 }
 
+/** Brushed dark panels with ribs, corner plates and a stencilled mark, like a touring flight case. */
+function crateTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#23262b";
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = `rgba(${Math.random() < 0.5 ? "255,255,255" : "0,0,0"},${Math.random() * 0.05})`;
+    g.fillRect(Math.random() * 256, Math.random() * 256, 30 + Math.random() * 60, 1);
+  }
+  g.fillStyle = "#15171a";
+  for (const y of [70, 186]) g.fillRect(0, y, 256, 8);
+  g.strokeStyle = "#8f959c";
+  g.lineWidth = 10;
+  g.strokeRect(5, 5, 246, 246);
+  g.fillStyle = "#9aa0a8";
+  for (const [x, y] of [[0, 0], [212, 0], [0, 212], [212, 212]]) g.fillRect(x, y, 44, 44);
+  g.fillStyle = "rgba(232,228,214,0.9)";
+  g.font = "900 64px ui-sans-serif, system-ui, sans-serif";
+  g.textAlign = "center";
+  g.fillText("OK", 128, 150);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 /** A boulder: a ball knocked out of round, with real rock on it. Stays inside its collision radius. */
 function boulderGeometry(r: number): THREE.BufferGeometry {
   const g = new THREE.SphereGeometry(r, 20, 14);
@@ -169,8 +198,17 @@ function build(track: Track) {
     }
   }
 
-  // Item boxes
-  const boxes = new THREE.InstancedMesh(new THREE.BoxGeometry(1.7, 1.7, 1.7), new THREE.MeshPhysicalMaterial({ color: "#fde047", emissive: "#f59e0b", emissiveIntensity: 0.9, roughness: 0.15, transparent: true, opacity: 0.85 }), Math.max(1, track.boxes.length));
+  // Item boxes: flight cases with a lit amber band, the kind a pit crew leaves trackside.
+  const caseTex = crateTexture();
+  const boxes = new THREE.InstancedMesh(new THREE.BoxGeometry(1.75, 1.15, 1.25), new THREE.MeshStandardMaterial({ map: caseTex, color: "#ffffff", metalness: 0.55, roughness: 0.42 }), Math.max(1, track.boxes.length));
+  const bands = new THREE.InstancedMesh(new THREE.BoxGeometry(1.79, 0.09, 1.29), new THREE.MeshBasicMaterial({ color: new THREE.Color(5.5, 2.6, 0.35), toneMapped: false }), Math.max(1, track.boxes.length));
+  bands.frustumCulled = false;
+  boxes.castShadow = true;
+  root.add(bands);
+  // A marker light above each case, so they can be picked out from a distance.
+  const beacons = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.05, 0.2, 5, 10, 1, true).translate(0, 3.2, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.8, 0.12), transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }), Math.max(1, track.boxes.length));
+  beacons.frustumCulled = false;
+  root.add(beacons);
   boxes.frustumCulled = false;
   root.add(boxes);
 
@@ -202,7 +240,7 @@ function build(track: Track) {
     root.add(m);
     pool.push(m);
   }
-  return { root, items, boxes, pool, geos, mats };
+  return { root, items, boxes, bands, beacons, pool, geos, mats };
 }
 
 const mat4 = new THREE.Matrix4();
@@ -255,11 +293,16 @@ export function Hazards({ track }: { track: Track }) {
     for (let i = 0; i < track.boxes.length; i++) {
       const b = track.boxes[i];
       const s = net.taken.has(i) ? 0.001 : 1 + Math.sin(now * 3 + i) * 0.06;
-      quat.setFromEuler(euler.set(now * 1.3 + i, now * 1.9 + i * 0.5, 0));
-      mat4.compose(v3.set(b.x, b.y + Math.sin(now * 2 + i) * 0.2, b.z), quat, scl.set(s, s, s));
+      // A slow turn on the spot and a slight hover: enough to catch the eye without tumbling.
+      quat.setFromEuler(euler.set(0, now * 0.9 + i, 0));
+      mat4.compose(v3.set(b.x, b.y - 0.25 + Math.sin(now * 2 + i) * 0.08, b.z), quat, scl.set(s, s, s));
       built.boxes.setMatrixAt(i, mat4);
+      built.bands.setMatrixAt(i, mat4);
+      built.beacons.setMatrixAt(i, mat4);
     }
+    built.beacons.instanceMatrix.needsUpdate = true;
     built.boxes.instanceMatrix.needsUpdate = true;
+    built.bands.instanceMatrix.needsUpdate = true;
 
     // Things players dropped or fired, and meteors.
     const e = net.entities;
