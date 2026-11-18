@@ -32,6 +32,71 @@ interface Palette {
   banner: [string, string, string];
 }
 
+/** Welded mesh for debris fencing: fine diagonal wires, see-through between them. */
+function fenceTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  g.clearRect(0, 0, 256, 256);
+  g.strokeStyle = "rgba(196,202,210,0.85)";
+  g.lineWidth = 1.6;
+  for (let k = -256; k <= 512; k += 16) {
+    g.beginPath();
+    g.moveTo(k, 0);
+    g.lineTo(k + 256, 256);
+    g.moveTo(k, 256);
+    g.lineTo(k + 256, 0);
+    g.stroke();
+  }
+  // Horizontal tension cables.
+  g.lineWidth = 3;
+  for (const y of [6, 128, 250]) {
+    g.beginPath();
+    g.moveTo(0, y);
+    g.lineTo(256, y);
+    g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/** A packed stand seen from the track: rows of heads and jackets over grey seats. */
+function crowdTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 1024;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#3b3f46";
+  g.fillRect(0, 0, 1024, 256);
+  const jackets = ["#b23a32", "#27496d", "#e0d9c8", "#2f6f4f", "#d98f2b", "#1d1f24", "#7a6a9a", "#c9ced6", "#4f7fae", "#8a3b5c"];
+  const skin = ["#e2b594", "#c68e6a", "#8d5a3c", "#f0cdb0", "#6b4530"];
+  let seed = 7;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rows = 16;
+  for (let row = 0; row < rows; row++) {
+    const y = (row + 0.5) * (256 / rows);
+    g.fillStyle = "#2a2d33";
+    g.fillRect(0, y + 5, 1024, 3);
+    for (let x = 3; x < 1024; x += 7 + r() * 3) {
+      if (r() < 0.14) continue; // empty seat
+      g.fillStyle = jackets[Math.floor(r() * jackets.length)];
+      g.fillRect(x - 2.6, y - 2, 5.2, 7);
+      g.fillStyle = skin[Math.floor(r() * skin.length)];
+      g.beginPath();
+      g.arc(x, y - 4.5, 2.1, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
 /** Asphalt differs by place: sun-bleached, frost-pale, ash-dark. */
 const ROAD_TINT: Record<string, string> = { frozen: "#e4e6ea", volcano: "#c4bcb8", neon: "#b9c0d2", office: "#d2d2d2", forest: "#dcdad6", night: "#c9ccd6" };
 
@@ -390,6 +455,127 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
       barrier.castShadow = true;
       barrier.receiveShadow = true;
       group.add(barrier);
+    }
+
+    // --- Trackside furniture on the realistic circuits: debris fencing, grandstands, marshal posts
+    if (verge) {
+      const blockedAt = (i: number, side: number): boolean => !!track.gap[i] || !!track.dyn[i] || (track.open[i] & (side > 0 ? 2 : 1)) !== 0;
+      const at = (i: number, lat: number, out: THREE.Vector3): THREE.Vector3 => out.set(track.px[i] + track.nx[i] * lat, track.hy[i] + lat * track.bankT[i], track.pz[i] + track.nz[i] * lat);
+      const steel = new THREE.MeshStandardMaterial({ color: "#6a7078", metalness: 0.85, roughness: 0.45 });
+      const concrete = new THREE.MeshStandardMaterial({ color: "#8d8c88", roughness: 0.92 });
+
+      // Debris fence: tall mesh panels leaning in at the top, in alternating stretches on each side.
+      const zone = Math.max(4, Math.round(150 / track.spacing));
+      const fencePos: number[] = [];
+      const fenceUv: number[] = [];
+      const posts: THREE.Matrix4[] = [];
+      const a0 = new THREE.Vector3();
+      const a1 = new THREE.Vector3();
+      const qq = new THREE.Quaternion();
+      const yUp = new THREE.Vector3(0, 1, 0);
+      const postEvery = Math.max(1, Math.round(4.5 / track.spacing));
+      for (const side of [1, -1]) {
+        for (let i = 0; i < track.n; i++) {
+          const j = (i + 1) % track.n;
+          const fenced = Math.floor(i / zone) % 2 === (side > 0 ? 0 : 1);
+          if (!fenced || blockedAt(i, side) || blockedAt(j, side)) continue;
+          const lat = side * (wall + 1.75);
+          const lean = side * (wall + 1.05);
+          at(i, lat, a0);
+          at(j, lat, a1);
+          const b0 = at(i, lean, new THREE.Vector3());
+          const b1 = at(j, lean, new THREE.Vector3());
+          const u0 = (i * track.spacing) / 1.6;
+          const u1 = u0 + track.spacing / 1.6;
+          // Upright panel, then the overhang.
+          const quads: [THREE.Vector3, number, THREE.Vector3, number, THREE.Vector3, number, THREE.Vector3, number][] = [
+            [a0, 1.0, a1, 1.0, a1, 4.4, a0, 4.4],
+            [a0, 4.4, a1, 4.4, b1, 5.1, b0, 5.1],
+          ];
+          for (const [p0, y0, p1, y1, p2, y2, p3, y3] of quads) {
+            fencePos.push(p0.x, p0.y + y0, p0.z, p1.x, p1.y + y1, p1.z, p2.x, p2.y + y2, p2.z, p0.x, p0.y + y0, p0.z, p2.x, p2.y + y2, p2.z, p3.x, p3.y + y3, p3.z);
+            fenceUv.push(u0, y0 / 1.6, u1, y1 / 1.6, u1, y2 / 1.6, u0, y0 / 1.6, u1, y2 / 1.6, u0, y3 / 1.6);
+          }
+          if (i % postEvery === 0) posts.push(new THREE.Matrix4().compose(a0.clone(), qq.setFromAxisAngle(yUp, Math.atan2(-track.nx[i] * side, -track.nz[i] * side)), new THREE.Vector3(1, 1, 1)));
+        }
+      }
+      if (fencePos.length > 0) {
+        const fg = new THREE.BufferGeometry();
+        fg.setAttribute("position", new THREE.Float32BufferAttribute(fencePos, 3));
+        fg.setAttribute("uv", new THREE.Float32BufferAttribute(fenceUv, 2));
+        fg.computeVertexNormals();
+        const mesh = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({ map: keep(fenceTexture()), transparent: true, alphaTest: 0.08, side: THREE.DoubleSide, metalness: 0.7, roughness: 0.5, depthWrite: false }));
+        mesh.renderOrder = 2;
+        group.add(mesh);
+        // Posts: upright to the top of the panel, then cranked inwards.
+        const postGeo = mergeGeometries([new THREE.CylinderGeometry(0.06, 0.07, 4.4, 6).translate(0, 2.2, 0), new THREE.CylinderGeometry(0.05, 0.06, 1.0, 6).rotateX(0.78).translate(0, 4.75, 0.35)], false)!;
+        const postMesh = new THREE.InstancedMesh(postGeo, steel, posts.length);
+        posts.forEach((m, k) => postMesh.setMatrixAt(k, m));
+        postMesh.instanceMatrix.needsUpdate = true;
+        postMesh.frustumCulled = false;
+        postMesh.castShadow = true;
+        group.add(postMesh);
+      }
+
+      // Grandstands on the start straight: a concrete bank of seats under a cantilever roof.
+      const crowd = keep(crowdTexture());
+      const standAt = (i: number, side: number) => {
+        const half = Math.round(26 / track.spacing);
+        for (let k = -half; k <= half; k++) if (blockedAt((i + k + track.n) % track.n, side)) return;
+        const stand = new THREE.Group();
+        at(i, side * (wall + 4.2), stand.position);
+        stand.rotation.y = Math.atan2(-track.nx[i] * side, -track.nz[i] * side);
+        // Local frame: +z towards the track, x along it.
+        const L = 48;
+        const base = new THREE.Mesh(new THREE.BoxGeometry(L, 1.6, 11).translate(0, 0.8, -5.5), concrete);
+        const seats = new THREE.Mesh(new THREE.PlaneGeometry(L, 12.2), new THREE.MeshStandardMaterial({ map: crowd, roughness: 1 }));
+        seats.rotation.x = -Math.PI / 2 + 0.52;
+        seats.position.set(0, 4.65, -5.6);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(L, 9.5, 0.4).translate(0, 4.75, -11.2), concrete);
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(L + 2, 0.25, 13).translate(0, 0, 0), steel);
+        roof.rotation.x = 0.1;
+        roof.position.set(0, 10.6, -5.2);
+        const fascia = new THREE.Mesh(new THREE.BoxGeometry(L, 1.1, 0.2).translate(0, 1.6, 0.05), new THREE.MeshStandardMaterial({ color: "#f3f1ea", roughness: 0.7 }));
+        stand.add(base, seats, back, roof, fascia);
+        for (let x = -L / 2 + 2; x <= L / 2 - 2; x += 8.8) {
+          const col = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10.4, 8).translate(x, 5.2, -10.6), steel);
+          const strut = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.3, 11).translate(x, 10.25, -5.2), steel);
+          strut.rotation.x = 0.1;
+          stand.add(col, strut);
+        }
+        stand.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.isMesh) {
+            m.castShadow = true;
+            m.receiveShadow = true;
+          }
+        });
+        group.add(stand);
+      };
+      standAt((track.n - Math.round(34 / track.spacing)) % track.n, 1);
+      standAt(Math.round(52 / track.spacing) % track.n, -1);
+
+      // Marshal posts: a small cabin with an orange roof every few hundred metres.
+      const huts: THREE.Matrix4[] = [];
+      const hutEvery = Math.max(8, Math.round(280 / track.spacing));
+      for (let i = Math.round(hutEvery / 2), k = 0; i < track.n; i += hutEvery, k++) {
+        const side = k % 2 ? -1 : 1;
+        if (blockedAt(i, side)) continue;
+        huts.push(new THREE.Matrix4().compose(at(i, side * (wall + 3.4), new THREE.Vector3()), qq.setFromAxisAngle(yUp, Math.atan2(-track.nx[i] * side, -track.nz[i] * side)), new THREE.Vector3(1, 1, 1)));
+      }
+      if (huts.length > 0) {
+        const cabin = new THREE.InstancedMesh(new THREE.BoxGeometry(2.6, 2.3, 2.2).translate(0, 1.15, 0), new THREE.MeshStandardMaterial({ color: "#e9e7e0", roughness: 0.8 }), huts.length);
+        const roofs = new THREE.InstancedMesh(new THREE.BoxGeometry(3.0, 0.16, 2.8).translate(0, 2.4, 0.2), new THREE.MeshStandardMaterial({ color: "#d9541e", roughness: 0.6 }), huts.length);
+        const windows = new THREE.InstancedMesh(new THREE.BoxGeometry(2.0, 0.8, 0.06).translate(0, 1.5, 1.11), new THREE.MeshStandardMaterial({ color: "#0b1016", metalness: 0.9, roughness: 0.08 }), huts.length);
+        for (const mesh of [cabin, roofs, windows]) {
+          huts.forEach((m, k) => mesh.setMatrixAt(k, m));
+          mesh.instanceMatrix.needsUpdate = true;
+          mesh.frustumCulled = false;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          group.add(mesh);
+        }
+      }
     }
 
     // --- Floodlights for night races: masts behind the barrier, alternating sides
