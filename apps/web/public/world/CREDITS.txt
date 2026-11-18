@@ -13,6 +13,13 @@ simplified for the game. Poly Haven asset names:
   tex/basalt_*                rock_wall_02
   tex/ash_*                   rocky_terrain_02
   tex/bark_*                  pine_bark
+  tex/grass_*                 leafy_grass
   models/barrier*             concrete_road_barrier
   models/namaqualand_boulder_02*   namaqualand_boulder_02
   models/rock_09*             rock_09
+
+models/car.glb is a simplified version of "Car Concept" from the Khronos glTF
+Sample Assets: (c) 2024, Darmstadt Graphics Group GmbH, licensed CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/). The interior, licence plate
+and Khronos logos were removed and the mesh reduced; materials are the game's own.
+https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept

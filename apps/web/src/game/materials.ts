@@ -153,18 +153,19 @@ export function groundMaterial(look: GroundLook, params: THREE.MeshStandardMater
  * Tarmac: photographed asphalt in world space, with the painted lines taken
  * from the track's own line texture and worn by the grain underneath.
  */
-export function roadMaterial(lines: THREE.Texture, tint: THREE.ColorRepresentation, roughness: number, metalness: number): THREE.MeshStandardMaterial {
+export function roadMaterial(lines: THREE.Texture, tint: THREE.ColorRepresentation, roughness: number, metalness: number, circuit = false): THREE.MeshStandardMaterial {
   const mat = new THREE.MeshStandardMaterial({ map: lines, roughness, metalness });
   const uniforms = {
     tD: { value: worldTexture("tex/asphalt_d.jpg", true, 16) },
     tN: { value: worldTexture("tex/asphalt_n.jpg", false, 16) },
     uTint: { value: new THREE.Color(tint) },
+    uCircuit: { value: circuit ? 1 : 0 },
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     worldVaryings(shader);
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform sampler2D tD; uniform sampler2D tN; uniform vec3 uTint; vec3 tWorldN; float tPaint;")
+      .replace("#include <common>", "#include <common>\nuniform sampler2D tD; uniform sampler2D tN; uniform vec3 uTint; uniform float uCircuit; vec3 tWorldN; float tPaint; float tRubber;")
       .replace(
         "#include <map_fragment>",
         `vec4 lines = texture2D(map, vMapUv);
@@ -176,14 +177,66 @@ export function roadMaterial(lines: THREE.Texture, tint: THREE.ColorRepresentati
         tPaint = smoothstep(0.14, 0.45, max(lines.r, max(lines.g, lines.b)));
         // Paint sits on the high spots of the grain and has worn off the low ones.
         tPaint *= smoothstep(0.55, 0.95, grain + 0.25);
-        diffuseColor.rgb *= mix(asp, lines.rgb * (0.62 + 0.2 * grain), tPaint);
+        float across = vMapUv.x;
+        float along = vMapUv.y;
+        // A real circuit has edge lines only, and they are thin, off-white and scuffed.
+        float edge = max(smoothstep(0.1, 0.06, across), smoothstep(0.9, 0.94, across));
+        tPaint *= mix(1.0, edge * (0.55 + 0.45 * smoothstep(0.3, 0.6, wide.g * 9.0)), uCircuit);
+        // The racing line: rubber laid down where cars actually drive, wandering from side to side.
+        float line = 0.5 + 0.2 * sin(along * 0.55) + 0.07 * sin(along * 1.7 + 1.3);
+        tRubber = uCircuit * smoothstep(0.24, 0.02, abs(across - line)) * (0.55 + 0.45 * sin(along * 0.23 + 2.0));
+        tRubber = max(tRubber, 0.0);
+        // Patch repairs, tar seams and a centre joint.
+        float repair = smoothstep(0.62, 0.66, texture2D(tD, vWPos.xz * 0.0031 + 0.7).g * 12.0 - floor(texture2D(tD, vWPos.xz * 0.0031 + 0.7).g * 12.0)) * uCircuit;
+        float seam = uCircuit * (1.0 - smoothstep(0.0, 0.004, abs(across - 0.5))) * 0.5;
+        float crack = uCircuit * smoothstep(0.985, 1.0, sin(vWPos.x * 0.9 + sin(vWPos.z * 0.6) * 2.5) * sin(vWPos.z * 0.83 + sin(vWPos.x * 0.5) * 2.0));
+        // Dust and bleaching towards the edges where nobody drives.
+        float dusty = uCircuit * smoothstep(0.34, 0.5, abs(across - 0.5)) * 0.35;
+        asp *= 1.0 - 0.34 * tRubber - 0.12 * repair - seam * 0.4 - crack * 0.5;
+        asp = mix(asp, asp * 1.5 + vec3(0.012, 0.011, 0.009), dusty);
+        vec3 paintCol = mix(lines.rgb * (0.62 + 0.2 * grain), vec3(0.74, 0.73, 0.69) * (0.75 + 0.25 * grain), uCircuit);
+        diffuseColor.rgb *= mix(asp, paintCol, tPaint);
         vec3 an = texture2D(tN, au).xyz * 2.0 - 1.0;
         tWorldN = normalize(normalize(vWNrm) + vec3(an.x, 0.0, an.y) * 0.75);`,
       )
-      .replace("#include <roughnessmap_fragment>", "float roughnessFactor = roughness * mix(1.0, 0.72, tPaint);")
+      .replace("#include <roughnessmap_fragment>", "float roughnessFactor = roughness * mix(1.0, 0.72, tPaint) * (1.0 - 0.3 * tRubber);")
       .replace("#include <normal_fragment_maps>", "normal = normalize(mat3(viewMatrix) * tWorldN);");
   };
   mat.customProgramCacheKey = () => "road";
+  return mat;
+}
+
+/**
+ * Kerbs: painted concrete that has been driven over for years. The colour
+ * comes from the mesh; the paint is chipped back to concrete and blackened
+ * with rubber.
+ */
+export function kerbMaterial(): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0, side: THREE.DoubleSide });
+  const uniforms = { tD: { value: worldTexture("tex/asphalt_d.jpg", true, 16) }, tN: { value: worldTexture("tex/asphalt_n.jpg", false, 16) } };
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    worldVaryings(shader);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform sampler2D tD; uniform sampler2D tN; vec3 tWorldN;")
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        vec2 ku = vWPos.xz * 0.21;
+        float fine = dot(texture2D(tD, ku).rgb, vec3(0.333));
+        float wide = dot(texture2D(tD, ku * 0.13 + 0.2).rgb, vec3(0.333));
+        float grainK = clamp(fine / max(wide, 0.004), 0.4, 1.7);
+        float chips = smoothstep(0.85, 1.15, 1.25 - grainK + (wide * 14.0 - 0.45)) * 0.6;
+        float scuff = smoothstep(0.4, 0.75, sin(vWPos.x * 0.35 + vWPos.z * 0.27) * 0.5 + 0.5 + (grainK - 1.0) * 0.6);
+        vec3 concrete = vec3(0.34, 0.33, 0.31) * (0.7 + 0.3 * grainK);
+        diffuseColor.rgb = mix(diffuseColor.rgb * (0.7 + 0.25 * grainK), concrete, chips * 0.75);
+        diffuseColor.rgb *= 1.0 - 0.3 * scuff;
+        vec3 kn = texture2D(tN, ku).xyz * 2.0 - 1.0;
+        tWorldN = normalize(normalize(vWNrm) * (gl_FrontFacing ? 1.0 : -1.0) + vec3(kn.x, 0.0, kn.y) * 0.6);`,
+      )
+      .replace("#include <normal_fragment_maps>", "normal = normalize(mat3(viewMatrix) * tWorldN);");
+  };
+  mat.customProgramCacheKey = () => "kerb";
   return mat;
 }
 

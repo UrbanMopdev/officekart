@@ -7,7 +7,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { scannedModel } from "./assets";
-import { groundMaterial, roadMaterial, snowCap } from "./materials";
+import { glowTexture } from "./textures";
+import { groundMaterial, kerbMaterial, roadMaterial, snowCap } from "./materials";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Track, TrackTheme } from "@office-kart/shared";
 import { net } from "../net/connection";
@@ -32,12 +33,14 @@ interface Palette {
 }
 
 /** Asphalt differs by place: sun-bleached, frost-pale, ash-dark. */
-const ROAD_TINT: Record<string, string> = { frozen: "#e4e6ea", volcano: "#c4bcb8", neon: "#b9c0d2", office: "#d2d2d2" };
+const ROAD_TINT: Record<string, string> = { frozen: "#e4e6ea", volcano: "#c4bcb8", neon: "#b9c0d2", office: "#d2d2d2", forest: "#dcdad6", night: "#c9ccd6" };
 
 /** Themes with a photographic landscape get matching verges and scanned concrete barriers. */
-const VERGE: Record<string, { texture: string; size: number; tint: string; roughness: number; snow?: number; barrierTint?: string }> = {
+const VERGE: Record<string, { texture: string; size: number; tint: string; roughness: number; snow?: number; barrierTint?: string; lamps?: boolean }> = {
   frozen: { texture: "snow", size: 7, tint: "#e9eef4", roughness: 0.8, snow: 1 },
   volcano: { texture: "ash", size: 9, tint: "#d6cec8", roughness: 0.97, barrierTint: "#cfc4be" },
+  forest: { texture: "grass", size: 6, tint: "#c2cbaa", roughness: 0.95 },
+  night: { texture: "grass", size: 6, tint: "#a9b3a0", roughness: 0.92, lamps: true },
 };
 
 /** Per-theme tweaks on top of the default outdoor palette. */
@@ -286,7 +289,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     // --- Road
     const roadMesh = new THREE.Mesh(
       strip(track, -road, 0.05, road, 0.05, { uvScale: 10 }),
-      roadMaterial(keep(roadTexture(pal.road)), ROAD_TINT[theme] ?? "#d6d6d6", pal.roadRoughness, pal.roadMetalness),
+      roadMaterial(keep(roadTexture(pal.road)), ROAD_TINT[theme] ?? "#d6d6d6", pal.roadRoughness, pal.roadMetalness, !!VERGE[theme]),
     );
     roadMesh.geometry.computeVertexNormals();
     roadMesh.receiveShadow = true;
@@ -315,7 +318,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
         ],
         (i) => (Math.floor(i / 2) % 2 ? kerbA : kerbB),
       ),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: verge ? 0.7 : 0.35, side: THREE.DoubleSide }),
+      verge ? kerbMaterial() : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, side: THREE.DoubleSide }),
     );
     kerb.receiveShadow = true;
     group.add(kerb);
@@ -387,6 +390,36 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
       barrier.castShadow = true;
       barrier.receiveShadow = true;
       group.add(barrier);
+    }
+
+    // --- Floodlights for night races: masts behind the barrier, alternating sides
+    if (verge?.lamps) {
+      const every = Math.max(1, Math.round(46 / track.spacing));
+      const spots: { x: number; y: number; z: number; yaw: number }[] = [];
+      let k = 0;
+      for (let i = 0; i < track.n; i += every, k++) {
+        const side = k % 2 ? 1 : -1;
+        if (track.gap[i] || track.dyn[i] || (track.open[i] & (side > 0 ? 2 : 1)) !== 0) continue;
+        const lat = side * (wall + 3.2);
+        spots.push({ x: track.px[i] + track.nx[i] * lat, y: track.hy[i] + lat * track.bankT[i], z: track.pz[i] + track.nz[i] * lat, yaw: Math.atan2(-track.nx[i] * side, -track.nz[i] * side) });
+      }
+      const mast = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.24, 13, 8).translate(0, 6.5, 0), new THREE.MeshStandardMaterial({ color: "#5d6268", metalness: 0.8, roughness: 0.45 }), spots.length);
+      const arm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.2, 3.4).translate(0, 13, 1.5), mast.material, spots.length);
+      const head = new THREE.InstancedMesh(new THREE.BoxGeometry(1.5, 0.12, 0.7).translate(0, 12.86, 3.1), new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 8.6, 7.6), toneMapped: false }), spots.length);
+      const pool = new THREE.InstancedMesh(new THREE.CircleGeometry(15, 24).rotateX(-Math.PI / 2).translate(0, 0.09, 8.5), new THREE.MeshBasicMaterial({ map: keep(glowTexture()), color: new THREE.Color(0.2, 0.19, 0.16), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), spots.length);
+      const mm = new THREE.Matrix4();
+      const qq = new THREE.Quaternion();
+      spots.forEach((sp, i) => {
+        qq.setFromAxisAngle(new THREE.Vector3(0, 1, 0), sp.yaw);
+        mm.compose(new THREE.Vector3(sp.x, sp.y, sp.z), qq, new THREE.Vector3(1, 1, 1));
+        for (const mesh of [mast, arm, head, pool]) mesh.setMatrixAt(i, mm);
+      });
+      for (const mesh of [mast, arm, head, pool]) {
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.frustumCulled = false;
+        group.add(mesh);
+      }
+      mast.castShadow = true;
     }
 
     // --- Light strip along the top of both barriers

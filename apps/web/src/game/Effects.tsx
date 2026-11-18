@@ -9,7 +9,7 @@ import type { Quality } from "../store";
  * result back into range.
  */
 export function Effects({ quality, theme }: { quality: Quality; theme: TrackTheme }) {
-  const neon = theme === "neon" || theme === "chaos" || theme === "volcano";
+  const neon = theme === "neon" || theme === "chaos" || theme === "volcano" || theme === "night";
   return (
     <EffectComposer multisampling={4} enableNormalPass={false}>
       {quality === "high" ? <N8AO halfRes quality="medium" aoRadius={3.2} distanceFalloff={1} intensity={neon ? 1.6 : 2.4} /> : <></>}

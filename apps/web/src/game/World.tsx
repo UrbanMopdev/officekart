@@ -44,6 +44,8 @@ const LIGHTING: Record<string, { sun: string; sunIntensity: number; dir: readonl
   chaos: { sun: "#d9b8ff", sunIntensity: 2.6, dir: [0.45, 0.7, 0.4], env: 0.4 },
   office: { sun: "#ffedcc", sunIntensity: 4.4, dir: [0.48, 0.78, 0.4], env: 0.38 },
   neon: { sun: "#9fb6ff", sunIntensity: 0.9, dir: [0.7, 0.5, 0.5], env: 0.3 },
+  forest: { sun: "#ffe9cc", sunIntensity: 3.9, dir: [0.72, 0.4, 0.58], env: 0.5 },
+  night: { sun: "#b9c9ff", sunIntensity: 1.5, dir: [0.74, 0.42, 0.53], env: 0.4 },
   alpine: { sun: "#fff3da", sunIntensity: 3.8, dir: [0.52, 0.72, 0.32], env: 0.45 },
 };
 
@@ -56,6 +58,9 @@ const SKIES: Record<string, { name: string; env: number; backdrop: number }> = {
   frozen: { name: "day", env: 0.85, backdrop: 0.75 },
   volcano: { name: "ember", env: 1.5, backdrop: 0.6 },
   neon: { name: "night", env: 1.1, backdrop: 1.6 },
+  forest: { name: "day", env: 0.8, backdrop: 0.75 },
+  // Moonlight, lifted the way a film shoots night: dark, but you can read the road.
+  night: { name: "night", env: 2.4, backdrop: 1.5 },
 };
 
 /** How many whole particles to emit this frame for a given rate. */

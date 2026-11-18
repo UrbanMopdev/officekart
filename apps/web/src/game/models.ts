@@ -29,6 +29,87 @@ export interface KitVehicle {
   /** Rear of the vehicle in game units, for exhaust flames. */
   tail: [number, number];
   labelY: number;
+  /** Set for the realistic car: bodywork split by finish, with its own materials. */
+  car?: CarKit;
+  /** The motorbike: built around the car's wheels, with a rider in leathers. */
+  bike?: boolean;
+}
+
+export type Finish = "paint1" | "paint2" | "glass" | "trim" | "head" | "tail" | "chrome" | "wheel_metal" | "wheel_dark" | "wheel_tire" | "leather";
+
+/** How one version of the car is finished. */
+export interface CarTrim {
+  scale: number;
+  /** Main paint: metallic flake under a clear coat, or matte. */
+  metalness: number;
+  roughness: number;
+  clearcoat: number;
+  /** The roof, sills and splitter: bare carbon, or the player's colour lightened. */
+  second: "carbon" | "light";
+  wing: boolean;
+  /** Ride height offset in model units. */
+  ride: number;
+}
+
+export interface CarKit {
+  body: { geo: THREE.BufferGeometry; finish: Finish }[];
+  wheel: { geo: THREE.BufferGeometry; finish: Finish }[];
+  /** Wheel centres in model units: x, y, z. */
+  wheels: { pos: THREE.Vector3; front: boolean; left: boolean }[];
+  wheelRadius: number;
+  trim: CarTrim;
+}
+
+/** Order matches VEHICLES; the motorbike (1) has no car trim. */
+const CAR_TRIMS: (CarTrim | null)[] = [
+  { scale: 0.88, metalness: 0.55, roughness: 0.28, clearcoat: 1, second: "carbon", wing: false, ride: 0 },
+  null,
+  { scale: 0.92, metalness: 0.75, roughness: 0.22, clearcoat: 1, second: "carbon", wing: true, ride: -0.025 },
+  { scale: 1.0, metalness: 0.1, roughness: 0.62, clearcoat: 0, second: "carbon", wing: false, ride: 0.05 },
+  { scale: 0.86, metalness: 0.4, roughness: 0.3, clearcoat: 1, second: "light", wing: true, ride: -0.01 },
+];
+
+let carBase: Omit<CarKit, "trim"> | null = null;
+const finishes = new Map<Finish, THREE.Material>();
+
+/** Materials every car shares. Paint is per car and made by the kart itself. */
+export function carFinish(finish: Finish): THREE.Material {
+  let m = finishes.get(finish);
+  if (!m) {
+    switch (finish) {
+      case "glass":
+        m = new THREE.MeshPhysicalMaterial({ color: "#06090d", metalness: 0.9, roughness: 0.06, envMapIntensity: 1.6 });
+        break;
+      case "head":
+        m = new THREE.MeshBasicMaterial({ color: new THREE.Color(7, 6.8, 6), toneMapped: false });
+        break;
+      case "tail":
+        m = new THREE.MeshBasicMaterial({ color: new THREE.Color(4.5, 0.25, 0.15), toneMapped: false });
+        break;
+      case "chrome":
+        m = new THREE.MeshStandardMaterial({ color: "#f0f2f4", metalness: 1, roughness: 0.04 });
+        break;
+      case "wheel_metal":
+        m = new THREE.MeshStandardMaterial({ color: "#b9bec6", metalness: 1, roughness: 0.22 });
+        break;
+      case "wheel_dark":
+        m = new THREE.MeshStandardMaterial({ color: "#16171a", metalness: 0.7, roughness: 0.4 });
+        break;
+      case "wheel_tire":
+        m = new THREE.MeshStandardMaterial({ color: "#0c0c0d", metalness: 0, roughness: 0.88 });
+        break;
+      case "paint2":
+        m = new THREE.MeshPhysicalMaterial({ color: "#0d0e11", metalness: 0.85, roughness: 0.34, clearcoat: 0.7, clearcoatRoughness: 0.12 });
+        break;
+      case "leather":
+        m = new THREE.MeshStandardMaterial({ color: "#15161a", metalness: 0, roughness: 0.5 });
+        break;
+      default:
+        m = new THREE.MeshStandardMaterial({ color: "#0b0b0d", metalness: 0.3, roughness: 0.62 });
+    }
+    finishes.set(finish, m);
+  }
+  return m;
 }
 
 export interface KitDriver {
@@ -57,6 +138,18 @@ let state: "idle" | "loading" | "ready" | "failed" = "idle";
 export const kitReady = (): boolean => state === "ready";
 
 export function kitVehicle(vehicle: number, avatar: number): KitVehicle | null {
+  const trim = CAR_TRIMS[vehicle];
+  if (carBase && vehicle === 1) {
+    const fallback = vehicles.get("kart:0");
+    if (fallback) return { ...fallback, wheels: [], scale: 1.12, seat: null, tail: [0.14, -1.05], labelY: 3.1, car: { ...carBase, trim: CAR_TRIMS[0]! }, bike: true };
+  }
+  if (carBase && trim) {
+    const fallback = vehicles.get("kart:0");
+    if (fallback) {
+      const len = 4.36 * trim.scale;
+      return { ...fallback, wheels: [], scale: trim.scale, seat: null, tail: [0.5 * trim.scale, -len * 0.46], labelY: 1.15 * trim.scale + 1.5, car: { ...carBase, trim } };
+    }
+  }
   const key = vehicle === 0 ? `kart:${avatar % DRIVER_FILES.length}` : `v:${vehicle}`;
   return vehicles.get(key) ?? null;
 }
@@ -178,6 +271,24 @@ async function loadFile(loader: GLTFLoader, dir: string, file: string): Promise<
   return { body: merge(body), wheels, driver, driverAt, material };
 }
 
+/** The realistic car (Khronos "Car Concept", CC BY 4.0), rebuilt as a light game model by tools outside the repo. */
+async function loadCar(loader: GLTFLoader): Promise<Omit<CarKit, "trim">> {
+  const gltf = await loader.loadAsync("/world/models/car.glb");
+  const body: CarKit["body"] = [];
+  const wheel: CarKit["wheel"] = [];
+  gltf.scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const name = (o.name || o.parent?.name || "") as Finish;
+    (name.startsWith("wheel") ? wheel : body).push({ geo: m.geometry, finish: name });
+  });
+  const extras = (gltf.asset as { extras?: { wheels?: Record<string, { c: number[]; size: number[] }> } }).extras;
+  const w = extras?.wheels;
+  if (!w || body.length === 0 || wheel.length === 0) throw new Error("car.glb is missing parts");
+  const wheels = Object.entries(w).map(([name, v]) => ({ pos: new THREE.Vector3(v.c[0], v.c[1], v.c[2]), front: name.includes("Front"), left: v.c[0] > 0 }));
+  return { body, wheel, wheels, wheelRadius: w.WheelRearL.size[1] / 2 };
+}
+
 /** Start loading. Safe to call more than once; the game draws its built-in karts until this finishes (or if it fails). */
 export function loadKit(): void {
   if (state !== "idle") return;
@@ -205,6 +316,11 @@ export function loadKit(): void {
           vehicles.set(`v:${v}`, { body: m.body, wheels: m.wheels, paint: findPaint(m.body, m.material), material: m.material, scale: cfg.scale, seat: cfg.seat, tail: cfg.tail, labelY: cfg.labelY });
         }),
       );
+      try {
+        carBase = await loadCar(loader);
+      } catch (err) {
+        console.warn("The car model could not be loaded; using the kit vehicles.", err);
+      }
       state = drivers.length === DRIVER_FILES.length ? "ready" : "failed";
       console.info(`Vehicle models: ${state} (${vehicles.size} vehicles, ${drivers.filter(Boolean).length} drivers)`);
     } catch (err) {

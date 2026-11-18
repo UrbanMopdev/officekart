@@ -36,9 +36,9 @@ tests before the next was started; none of it has been tuned by people playing y
 **Tracks.** Four circuits, each drawn corner by corner (`packages/shared/src/tracks/layout.ts`: a layout
 is a polygon whose vertices are corners with a chosen radius), so there are real hairpins (about 17 m),
 chicanes, esses and sweepers instead of smooth loops:
-- *Office Grand Prix*: bus-stop chicane, double hairpin, table-top jump, desk slalom on conveyor belts.
+- *Office Grand Prix*: the home circuit, set in pine forest: bus-stop chicane, double hairpin, table-top jump, slalom on conveyor belts.
 - *Volcano Pass*: three stacked hairpins up a 58 m climb, a lava jump on the open crater rim, esses down.
-- *Neon Circuit*: a street circuit with a ramp jump into a braking hairpin, flyovers, two chicanes, laser gates.
+- *Midnight Circuit* (id `neon-circuit`): a floodlit night race with a ramp jump into a braking hairpin, flyovers, two chicanes, laser gates.
 - *Frozen Lake*: an icy S, a snowed-in hairpin, and esses over ice that cracks.
 The earlier eight looped tracks were removed. Proving Grounds remains as a test-only track.
 
@@ -100,7 +100,7 @@ own best is kept as a second ghost. `T` restarts a run. Leaderboard entries belo
 the browser, so a player keeps their entry across sessions on the same device; there are no accounts.
 
 **Vehicles and drivers.** Five vehicles with different top speed, acceleration, handling, drift and
-weight (Go-Kart, Scooter, Hot Rod, Forklift, Drifter), and ten cosmetic driver looks. The vehicle is part
+weight (GT, Motorbike, Hypercar, Bruiser, Drift Spec), and ten cosmetic driver looks. The vehicle is part
 of the shared simulation; weight decides who gives way in a collision.
 
 **Drifting.** A drift follows an arc of fixed radius at any speed (19 m steering into it, 44 m with the
@@ -113,7 +113,7 @@ and 2.2 s.
 Kenney's Car Kit (3.1) and Racing Starter Kit, both Creative Commons Zero; their licence files sit beside
 the models in `apps/web/public/models`. `apps/web/src/game/models.ts` loads them at start-up, separates
 bodywork, wheels and driver, and repaints one colour swatch per model (bodywork and helmet) in the
-player's colour. Go-Kart, Motorbike, Race Car, Digger and Hot Hatch map to the five vehicle stat lines;
+player's colour. These kit models are now only the fallback: see "Realistic vehicles" below;
 the five drivers are Kenney's kart racers. If the files cannot be fetched the game falls back to the
 built-in generated karts. The Motorbike banks into corners; four-wheeled vehicles only roll slightly.
 
@@ -125,7 +125,17 @@ verges and hills share one grain and cliffs are textured from the side; it also 
 flowing-lava and settled-snow shaders. The landscape itself is smooth noise shaped around the circuit
 (`themes/TerrainTheme.tsx`), and the forest is built from bark-textured trunks and needle-covered bough
 cards (`themes/trees.ts`). Asset names and the licence are listed in `apps/web/public/world/CREDITS.txt`.
-The Office and Neon tracks and the vehicle models are still stylised.
+All four tracks use this pipeline: Office Grand Prix is a forest circuit, Midnight Circuit a moonlit one with
+floodlight masts, Frozen Lake and Volcano Pass as named. The tarmac shader adds a rubbered racing line,
+repairs, seams and dusty edges; kerbs are chipped, scuffed painted concrete. The earlier office-interior and
+neon-city themes are still in `themes/` but no track uses them.
+
+**Realistic vehicles.** The four cars are one model in four trims: Khronos's "Car Concept" sample
+(© 2024 Darmstadt Graphics Group GmbH, CC BY 4.0), rebuilt offline into a 27,000-triangle game model with
+the interior and Khronos logos removed (`apps/web/public/world/models/car.glb`). Paint is the player's
+colour under a clear coat; GT, Hypercar (wing, lowered), Bruiser (matte, larger) and Drift Spec (two-tone,
+wing) differ in finish. The Motorbike is built in code from smooth solids on the car's wheels, with a rider
+in leathers. Cars are closed, so the driver choice is not visible in them.
 
 ### Not built, or simplified
 

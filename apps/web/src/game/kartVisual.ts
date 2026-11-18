@@ -3,7 +3,7 @@
  * kart; each kart only owns its paint materials, so twelve karts cost little.
  */
 import * as THREE from "three";
-import { kitDriver, kitReady, kitVehicle, tintedMaterial } from "./models";
+import { carFinish, kitDriver, kitReady, kitVehicle, tintedMaterial, type KitVehicle } from "./models";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FLAG, FX, KART_COLORS } from "@office-kart/shared";
@@ -375,6 +375,8 @@ export interface KartLook {
   underglow: boolean;
 }
 
+const PHANTOM = new THREE.MeshStandardMaterial({ color: "#9aa4b2", transparent: true, opacity: 0.3, roughness: 0.4, depthWrite: false });
+
 export class KartVisual {
   readonly group = new THREE.Group();
   /** Smoothed steering (-1 left .. 1 right), derived from how fast the kart is turning. */
@@ -384,13 +386,16 @@ export class KartVisual {
   // --- Artist-made model (see models.ts). Replaces the built-in kart once the files have loaded.
   private kit: THREE.Group | null = null;
   private kitKey = "";
-  private kitWheels: { mesh: THREE.Mesh; radius: number }[] = [];
+  private kitWheels: { mesh: THREE.Object3D; radius: number }[] = [];
   private kitSteer: THREE.Group[] = [];
   private kitDriver: THREE.Mesh | null = null;
   private kitDriverY = 0;
   private kitTint: THREE.Color | null = null;
   private kitHelmet: THREE.Color | null = null;
   private kitMats: THREE.MeshStandardMaterial[] = [];
+  /** Second colour on two-tone cars: the player colour, lightened. */
+  private kitSecond: THREE.Color | null = null;
+  private kitCar = false;
   private shadowsOn = true;
   private readonly rider = new THREE.Group();
   private readonly head = new THREE.Group();
@@ -591,14 +596,20 @@ export class KartVisual {
 
     const kit = new THREE.Group();
     kit.scale.setScalar(v.scale);
-    const { material, tint } = tintedMaterial(v.material, v.paint);
+    this.kitSecond = null;
+    this.kitCar = !!v.car;
+    if (v.bike) this.buildBike(kit, v);
+    else if (v.car) this.buildCar(kit, v);
+    const { material, tint } = v.car ? { material: null, tint: this.kitTint! } : tintedMaterial(v.material, v.paint);
     this.kitTint = tint;
-    this.kitMats.push(material);
-    kit.add(new THREE.Mesh(v.body, material));
-    for (const w of v.wheels) {
+    if (material) {
+      this.kitMats.push(material);
+      kit.add(new THREE.Mesh(v.body, material));
+    }
+    for (const w of material ? v.wheels : []) {
       const pivot = new THREE.Group();
       pivot.position.copy(w.pos);
-      const mesh = new THREE.Mesh(w.geo, material);
+      const mesh = new THREE.Mesh(w.geo, material!);
       pivot.add(mesh);
       kit.add(pivot);
       this.kitWheels.push({ mesh, radius: w.radius * v.scale });
@@ -627,9 +638,135 @@ export class KartVisual {
     this.ghost = false;
   }
 
+  /**
+   * The motorbike: a faired sports bike on the car's wheels, with a rider tucked in over the tank.
+   * Shapes are smooth solids in the same paint, carbon and leather finishes as the cars.
+   */
+  private buildBike(kit: THREE.Group, v: KitVehicle): void {
+    const car = v.car!;
+    const paint = new THREE.MeshPhysicalMaterial({ metalness: 0.5, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.2 });
+    this.kitTint = paint.color;
+    this.kitMats.push(paint);
+    const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    const blob = (c: THREE.Vector3, sx: number, sy: number, sz: number, tilt = 0) => new THREE.SphereGeometry(1, 20, 14).scale(sx, sy, sz).rotateX(tilt).translate(c.x, c.y, c.z);
+    const limb = (a: THREE.Vector3, b: THREE.Vector3, r: number) => {
+      const d = b.clone().sub(a);
+      const g = new THREE.CapsuleGeometry(r, d.length(), 5, 12);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d.clone().normalize()));
+      const m = a.clone().add(b).multiplyScalar(0.5);
+      return g.translate(m.x, m.y, m.z);
+    };
+    const both = (f: (side: number) => THREE.BufferGeometry) => [f(-1), f(1)];
+    const add = (parts: THREE.BufferGeometry[], material: THREE.Material) => {
+      const merged = mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)), false)!;
+      for (const g of parts) g.dispose();
+      kit.add(new THREE.Mesh(merged, material));
+    };
+    // Bodywork in the player's colour: nose fairing, tank, belly pan, tail unit, and the helmet.
+    add([blob(V(0, 0.78, 0.5), 0.2, 0.25, 0.36, -0.25), blob(V(0, 0.88, 0.06), 0.17, 0.15, 0.3), blob(V(0, 0.4, 0.06), 0.15, 0.15, 0.44), blob(V(0, 0.84, -0.62), 0.12, 0.09, 0.3, 0.22), blob(V(0, 1.37, 0.33), 0.15, 0.155, 0.17)], paint);
+    // Frame, engine, swingarm, forks, seat, bars and tyre huggers.
+    add(
+      [
+        blob(V(0, 0.52, -0.02), 0.17, 0.2, 0.36),
+        limb(V(0, 0.36, -0.2), V(0, 0.33, -0.68), 0.05),
+        ...both((s) => limb(V(s * 0.085, 0.33, 0.7), V(s * 0.085, 0.95, 0.44), 0.028)),
+        limb(V(-0.3, 0.99, 0.4), V(0.3, 0.99, 0.4), 0.02),
+        blob(V(0, 0.8, -0.3), 0.14, 0.05, 0.22),
+      ],
+      carFinish("trim"),
+    );
+    add([limb(V(0.13, 0.4, -0.25), V(0.15, 0.52, -0.82), 0.045)], carFinish("chrome"));
+    add([blob(V(0, 1.0, 0.6), 0.13, 0.13, 0.14, -0.5), blob(V(0, 1.38, 0.42), 0.12, 0.085, 0.1)], carFinish("glass"));
+    add([blob(V(0, 0.8, 0.86), 0.09, 0.06, 0.03)], carFinish("head"));
+    add([blob(V(0, 0.86, -0.92), 0.06, 0.03, 0.02)], carFinish("tail"));
+    // The rider: hips back on the seat, chest low over the tank, knees in against the fairing.
+    add(
+      [
+        limb(V(0, 0.95, -0.24), V(0, 1.2, 0.2), 0.15),
+        blob(V(0, 0.9, -0.27), 0.17, 0.13, 0.17),
+        ...both((s) => limb(V(s * 0.2, 1.2, 0.2), V(s * 0.3, 1.06, 0.34), 0.055)),
+        ...both((s) => limb(V(s * 0.3, 1.06, 0.34), V(s * 0.29, 1.0, 0.44), 0.048)),
+        ...both((s) => limb(V(s * 0.13, 0.9, -0.24), V(s * 0.22, 0.72, 0.16), 0.08)),
+        ...both((s) => limb(V(s * 0.22, 0.72, 0.16), V(s * 0.2, 0.42, -0.14), 0.06)),
+        ...both((s) => limb(V(s * 0.2, 0.4, -0.16), V(s * 0.2, 0.38, 0.0), 0.05)),
+        limb(V(0, 1.2, 0.2), V(0, 1.3, 0.29), 0.07),
+      ],
+      carFinish("leather"),
+    );
+    // Wheels: the car's, narrowed.
+    for (const z of [0.7, -0.68]) {
+      const pivot = new THREE.Group();
+      const r = 0.33;
+      pivot.position.set(0, r, z);
+      const spin = new THREE.Group();
+      const k = r / car.wheelRadius;
+      spin.scale.set(0.5, k, k);
+      for (const part of car.wheel) spin.add(new THREE.Mesh(part.geo, carFinish(part.finish)));
+      pivot.add(spin);
+      kit.add(pivot);
+      this.kitWheels.push({ mesh: spin, radius: r * v.scale });
+      if (z > 0) this.kitSteer.push(pivot);
+    }
+  }
+
+  /** The realistic car: paint in the player's colour under a clear coat, everything else in shared finishes. */
+  private buildCar(kit: THREE.Group, v: KitVehicle): void {
+    const car = v.car!;
+    const t = car.trim;
+    const paint = new THREE.MeshPhysicalMaterial({ metalness: t.metalness, roughness: t.roughness, clearcoat: t.clearcoat, clearcoatRoughness: 0.06, envMapIntensity: 1.25 });
+    this.kitTint = paint.color;
+    this.kitMats.push(paint);
+    let second: THREE.Material = carFinish("paint2");
+    if (t.second === "light") {
+      const light = new THREE.MeshPhysicalMaterial({ metalness: 0.3, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 });
+      this.kitSecond = light.color;
+      this.kitMats.push(light);
+      second = light;
+    }
+    const shell = new THREE.Group();
+    // Centre the wheelbase on the kart and set the ride height.
+    shell.position.set(0, t.ride, -0.09);
+    for (const part of car.body) shell.add(new THREE.Mesh(part.geo, part.finish === "paint1" ? paint : part.finish === "paint2" ? second : carFinish(part.finish)));
+    if (t.wing) {
+      const carbon = carFinish("paint2");
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.035, 0.34), carbon);
+      blade.position.set(0, 1.2, -1.72);
+      blade.rotation.x = 0.14;
+      shell.add(blade);
+      for (const x of [-0.62, 0.62]) {
+        const strut = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.3, 0.2), carbon);
+        strut.position.set(x, 1.05, -1.7);
+        shell.add(strut);
+      }
+      for (const x of [-0.94, 0.94]) {
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.2, 0.4), carbon);
+        plate.position.set(x, 1.22, -1.72);
+        shell.add(plate);
+      }
+    }
+    kit.add(shell);
+    for (const w of car.wheels) {
+      const pivot = new THREE.Group();
+      pivot.position.set(w.pos.x, w.pos.y, w.pos.z - 0.09);
+      const spin = new THREE.Group();
+      const side = new THREE.Group();
+      // The wheel is modelled for the left side; the right-hand ones are turned round.
+      if (!w.left) side.rotation.y = Math.PI;
+      for (const part of car.wheel) side.add(new THREE.Mesh(part.geo, carFinish(part.finish)));
+      spin.add(side);
+      pivot.add(spin);
+      kit.add(pivot);
+      this.kitWheels.push({ mesh: spin, radius: car.wheelRadius * v.scale });
+      if (w.front) this.kitSteer.push(pivot);
+    }
+  }
+
   private paintKit(): void {
     if (this.colorIndex < 0) return;
+    if (this.kitSecond) this.kitSecond.set(KART_COLORS[this.colorIndex % KART_COLORS.length]).lerp(new THREE.Color("#ffffff"), 0.82);
     this.kitTint?.set(KART_COLORS[this.colorIndex % KART_COLORS.length]);
+    // Car paint is deepened: flake and clear coat add their own brightness on top.
+    if (this.kitCar) this.kitTint?.multiplyScalar(0.72);
     this.kitHelmet?.set(KART_COLORS[this.colorIndex % KART_COLORS.length]);
   }
 
@@ -685,6 +822,13 @@ export class KartVisual {
         m.opacity = ghost ? 0.35 : 1;
         m.needsUpdate = true;
       }
+      // Parts in finishes shared between cars (glass, wheels, trim) swap to a see-through stand-in.
+      this.kit?.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || this.kitMats.includes(mesh.material as THREE.MeshStandardMaterial)) return;
+        mesh.userData.solid ??= mesh.material;
+        mesh.material = ghost ? PHANTOM : (mesh.userData.solid as THREE.Material);
+      });
     }
     const airborne = (flags & FLAG.AIRBORNE) !== 0;
     if (airborne && dt > 0) {

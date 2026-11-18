@@ -16,7 +16,7 @@ export interface BoostPadDef {
   length: number;
 }
 
-export type TrackTheme = "office" | "neon" | "sky" | "alpine" | "volcano" | "frozen" | "jungle" | "sea" | "chaos";
+export type TrackTheme = "office" | "neon" | "sky" | "alpine" | "volcano" | "frozen" | "jungle" | "sea" | "chaos" | "forest" | "night";
 
 /** Road surfaces. The index is what the simulation stores. */
 export const SURFACE_TYPES = ["asphalt", "dirt", "mud", "ice", "snow", "sand", "boost", "oil", "conveyor", "conveyorBack"] as const;
