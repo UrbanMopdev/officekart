@@ -25,6 +25,15 @@ export function loadGhost(trackId: string, laps: number, speed: number): Ghost |
     const raw = localStorage.getItem(key(trackId, laps, speed));
     if (!raw) return null;
     const { ms, d } = JSON.parse(raw) as { ms: number; d: string };
+    return decodeGhost(ms, d);
+  } catch {
+    return null;
+  }
+}
+
+/** Turn a stored or downloaded run (base64 of 16-bit samples) into something playable. */
+export function decodeGhost(ms: number, d: string): Ghost | null {
+  try {
     const bytes = Uint8Array.from(atob(d), (c) => c.charCodeAt(0));
     const data = new Int16Array(bytes.buffer, 0, Math.floor(bytes.length / 2));
     return ms > 0 && data.length >= STRIDE * 4 ? { ms, data } : null;

@@ -22,6 +22,8 @@ export class PlayerState extends Schema {
   @type("uint32") finishMs = 0;
   @type("uint32") bestLapMs = 0;
   /** Held power-up (0 = none) and how many uses it has left. */
+  @type("uint8") vehicle = 0;
+  @type("uint8") avatar = 0;
   @type("uint8") item = 0;
   @type("uint8") charges = 0;
   /** Running totals for this lobby session. */
@@ -51,6 +53,9 @@ export class RaceState extends Schema {
   @type("uint8") chaos = 1;
   /** Index into SPEED_CLASSES. */
   @type("uint8") speed = DEFAULT_SPEED_CLASS;
+  /** Solo time trial: no power-ups or chaos events; the run goes on the leaderboard. */
+  @type("boolean") trial = false;
+  @type("boolean") weekly = false;
   /** Current or announced chaos event and the race ticks it runs between. */
   @type("uint8") eventId = 0;
   @type("int32") eventFrom = 0;

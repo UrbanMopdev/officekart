@@ -8,6 +8,8 @@ import { activeRoomCount } from "./util/codes";
 import { errorFields, log } from "./util/log";
 import { tickStats } from "./util/metrics";
 import { WindowLimiter } from "./util/rateLimit";
+import { SPEED_CLASSES, TRACK_DEFS, weekIndex, weeklyChallenge } from "@office-kart/shared";
+import { initScores, readBoard, readGhost, scoresKind, weekBoard } from "./scores";
 
 const PORT = Number(process.env.PORT) || 2567;
 const HOST = "0.0.0.0";
@@ -57,7 +59,77 @@ app.get("/health", (_req, res) => {
     rooms: activeRoomCount(),
     memoryMb: Math.round(process.memoryUsage().rss / 1048576),
     tick: tickStats(),
+    scores: scoresKind(),
   });
+});
+
+// -------------------------------------------------------- leaderboards (read-only)
+// Scores are only ever written by the game room when a run finishes; these routes just read them.
+const apiLimiter = new WindowLimiter(Number(process.env.API_PER_MINUTE) || 240, 60_000);
+app.use("/api", (req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.length === 0) res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  else if (origin && originAllowed(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+  if (req.method !== "GET") {
+    res.status(405).json({ error: "Read-only" });
+    return;
+  }
+  if (!apiLimiter.allow(clientIp(req))) {
+    res.status(429).json({ error: "Too many requests" });
+    return;
+  }
+  next();
+});
+
+/** Reads and checks ?track=&speed=&board=&pid= */
+function boardQuery(q: Record<string, unknown>): { board: string; trackId: string; speed: number; pid?: string } | null {
+  const trackId = String(q.track ?? "");
+  const speed = Number(q.speed);
+  if (!TRACK_DEFS[trackId] || !Number.isInteger(speed) || speed < 0 || speed >= SPEED_CLASSES.length) return null;
+  const pid = typeof q.pid === "string" && /^[a-z0-9-]{8,40}$/.test(q.pid) ? q.pid : undefined;
+  return { board: q.board === "week" ? weekBoard(weekIndex(Date.now())) : "all", trackId, speed, pid };
+}
+
+app.get("/api/challenge", (req, res, next) => {
+  const c = weeklyChallenge(Date.now());
+  const pid = typeof req.query.pid === "string" && /^[a-z0-9-]{8,40}$/.test(req.query.pid) ? req.query.pid : undefined;
+  readBoard(weekBoard(c.week), c.trackId, c.speed, pid)
+    .then((b) => res.json({ challenge: c, ...b }))
+    .catch(next);
+});
+
+app.get("/api/board", (req, res, next) => {
+  const q = boardQuery(req.query);
+  if (!q) {
+    res.status(400).json({ error: "Unknown track or speed class" });
+    return;
+  }
+  readBoard(q.board, q.trackId, q.speed, q.pid)
+    .then((b) => res.json(b))
+    .catch(next);
+});
+
+// The ghost of the fastest run on a board (or of one player's best with &of=<pid>).
+app.get("/api/ghost", (req, res, next) => {
+  const q = boardQuery(req.query);
+  if (!q) {
+    res.status(400).json({ error: "Unknown track or speed class" });
+    return;
+  }
+  const of = typeof req.query.of === "string" && /^[a-z0-9-]{8,40}$/.test(req.query.of) ? req.query.of : undefined;
+  readGhost(q.board, q.trackId, q.speed, of)
+    .then((g) => (g ? res.json(g) : res.status(404).json({ error: "No run on this board yet" })))
+    .catch(next);
+});
+
+app.use("/api", (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  log.warn("api_error", errorFields(err));
+  res.status(500).json({ error: "Leaderboards are unavailable right now" });
 });
 
 app.get("/", (_req, res) => {
@@ -132,6 +204,8 @@ process.on("uncaughtException", (err) => {
 process.on("unhandledRejection", (reason) => {
   log.error("unhandled_rejection", errorFields(reason));
 });
+
+void initScores();
 
 gameServer
   .listen(PORT, HOST)

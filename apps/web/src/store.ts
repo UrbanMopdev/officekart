@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Notice, RoomView } from "@office-kart/shared";
+import type { Notice, RoomView, TrialResult } from "@office-kart/shared";
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "reconnecting";
 /** high: shadows, ambient occlusion, bloom. medium: shadows and bloom. low: neither. */
@@ -48,6 +48,16 @@ interface Store {
   underwater: boolean;
   /** Time of the ghost run being raced against right now (0 = none). */
   ghostMs: number;
+  /** Time trial: whose record ghost is on track. */
+  champion: { name: string; ms: number; mine: boolean } | null;
+  /** How the last time-trial run scored. */
+  trialResult: TrialResult | null;
+  /** Chosen vehicle and driver look. */
+  vehicle: number;
+  avatar: number;
+  setGarage(patch: { vehicle?: number; avatar?: number }): void;
+  /** Random id kept in this browser so leaderboard entries stay with one person. */
+  pid: string;
   /** While watching: which racer (by place order) the camera follows. */
   spectate: number;
   name: string;
@@ -68,6 +78,31 @@ interface Store {
 }
 
 const NAME_KEY = "office-kart:name";
+const GARAGE_KEY = "office-kart:garage";
+const PID_KEY = "office-kart:pid";
+
+function loadGarage(): { vehicle: number; avatar: number } {
+  try {
+    const g = JSON.parse(localStorage.getItem(GARAGE_KEY) ?? "{}");
+    return { vehicle: Number.isInteger(g.vehicle) ? g.vehicle : 0, avatar: Number.isInteger(g.avatar) ? g.avatar : 0 };
+  } catch {
+    return { vehicle: 0, avatar: 0 };
+  }
+}
+
+function loadPid(): string {
+  const make = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `p-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`);
+  try {
+    let pid = localStorage.getItem(PID_KEY);
+    if (!pid || !/^[a-z0-9-]{8,40}$/.test(pid)) {
+      pid = make();
+      localStorage.setItem(PID_KEY, pid);
+    }
+    return pid;
+  } catch {
+    return make();
+  }
+}
 const QUALITY_KEY = "office-kart:quality";
 
 function loadQuality(): Quality | null {
@@ -123,6 +158,19 @@ export const useStore = create<Store>((set) => ({
   },
   underwater: false,
   ghostMs: 0,
+  champion: null,
+  trialResult: null,
+  ...loadGarage(),
+  pid: loadPid(),
+  setGarage(patch) {
+    set(patch);
+    try {
+      const { vehicle, avatar } = useStore.getState();
+      localStorage.setItem(GARAGE_KEY, JSON.stringify({ vehicle, avatar }));
+    } catch {
+      /* private mode: the choice lasts for this visit */
+    }
+  },
   spectate: 0,
   status: "idle",
   room: null,

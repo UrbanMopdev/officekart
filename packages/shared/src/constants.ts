@@ -58,19 +58,49 @@ export const KART = {
   /** Fraction of turn rate lost at top speed (speed-sensitive steering). */
   turnSpeedDamp: 0.38,
   grip: 9,
-  driftGrip: 2.4,
-  driftTurn: 2.05,
-  driftMinSpeed: 13,
+  driftGrip: 3.1,
+  driftTurn: 2.3,
+  driftMinSpeed: 11,
+  /** Radians the tail steps out the instant a drift starts. */
+  driftKick: 0.11,
   /** Seconds of drift charge needed for each mini-turbo level. */
-  driftLevels: [0.7, 1.6, 2.6],
+  driftLevels: [0.55, 1.3, 2.2],
   /** Boost duration (seconds) granted by each mini-turbo level. */
-  driftBoost: [0.55, 1.0, 1.7],
+  driftBoost: [0.7, 1.2, 1.9],
   boostExtraSpeed: 10,
   boostAccelMul: 2.2,
   offroadSpeedMul: 0.5,
   offroadBoostSpeedMul: 0.85,
   boostPadSeconds: 1.1,
 } as const;
+
+/**
+ * Vehicles. Each multiplier is applied on top of the base kart tuning:
+ * `speed` top speed, `accel` acceleration, `turn` steering, `drift` how tight a
+ * drift is and how fast it charges, `weight` who gets shoved in a collision.
+ */
+export const VEHICLES = [
+  { name: "Go-Kart", tag: "Balanced. Good at everything.", speed: 1, accel: 1, turn: 1, drift: 1, weight: 1 },
+  { name: "Scooter", tag: "Quick off the line and nimble, but light and a little slower flat out.", speed: 0.965, accel: 1.3, turn: 1.14, drift: 1.05, weight: 0.65 },
+  { name: "Hot Rod", tag: "Highest top speed. Slow to get going and wide in corners.", speed: 1.045, accel: 0.8, turn: 0.9, drift: 0.94, weight: 1.15 },
+  { name: "Forklift", tag: "Heavy. Shoves others aside and barely notices a bump.", speed: 1, accel: 0.9, turn: 0.95, drift: 0.9, weight: 1.8 },
+  { name: "Drifter", tag: "Drift specialist: tighter slides that charge faster.", speed: 0.985, accel: 1.05, turn: 1, drift: 1.3, weight: 0.9 },
+] as const;
+
+/** Driver looks. Purely cosmetic. */
+export const AVATARS = ["Racer", "Cat", "Robot", "Boss", "Intern", "Royal", "Alien", "Unicorn", "Astronaut", "Chef"] as const;
+
+/** Time trials: solo, no power-ups, no chaos events, always this many laps. */
+export const TRIAL_LAPS = 3;
+const WEEK_MS = 7 * 86400_000;
+/** Weeks roll over on Monday at midnight Eastern (05:00 UTC). */
+const WEEK_EPOCH = Date.UTC(2024, 0, 1, 5);
+export function weekIndex(now: number): number {
+  return Math.floor((now - WEEK_EPOCH) / WEEK_MS);
+}
+export function weekBounds(index: number): { startsAt: number; endsAt: number } {
+  return { startsAt: WEEK_EPOCH + index * WEEK_MS, endsAt: WEEK_EPOCH + (index + 1) * WEEK_MS };
+}
 
 /**
  * Speed classes. `k` scales top speed, acceleration and boosts; steering does

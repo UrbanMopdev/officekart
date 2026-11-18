@@ -40,12 +40,20 @@ import {
   ROCKET,
   SPEED_CLASSES,
   KART,
+  AVATARS,
+  TRIAL_LAPS,
+  VEHICLES,
+  weekIndex,
+  weeklyChallenge,
+  type CreateOptions,
+  type TrialResult,
 } from "@office-kart/shared";
 import { CHAOS_PACE, ItemWorld, pickEvent, rollItem } from "./items";
 import { activeRoomCount, releaseCode, reserveCode } from "../util/codes";
 import { errorFields, log } from "../util/log";
 import { recordTick } from "../util/metrics";
 import { TokenBucket } from "../util/rateLimit";
+import { submitRun } from "../scores";
 import { AwardState, PlayerState, RaceState } from "./schema";
 
 const MAX_ROOMS = Number(process.env.MAX_ROOMS) || 100;
@@ -94,6 +102,8 @@ interface Racer {
   draft: number;
   /** Server time the accelerator went down during the countdown (0 = not held). */
   revAt: number;
+  /** Time trials: the run, sampled every three ticks, for the leaderboard ghost. */
+  ghost: number[];
   stats: { peak: number; driftBoosts: number; airTicks: number; hazardHits: number; itemHits: number; tricks: number; drafts: number };
 }
 
@@ -102,10 +112,19 @@ interface ClientMeta {
   msgBucket: TokenBucket;
   strikes: number;
   kicked: boolean;
+  /** Browser-kept player id, used for leaderboard entries. */
+  pid: string;
 }
 
+/** A whole number in [0, count), or the fallback. */
+function pickIndex(value: unknown, count: number, fallback = 0): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value < count ? value : fallback;
+}
+
+const q16 = (v: number) => Math.max(-32767, Math.min(32767, Math.round(v)));
+
 function newMeta(): ClientMeta {
-  return { inputBucket: new TokenBucket(90, 60), msgBucket: new TokenBucket(30, 10), strikes: 0, kicked: false };
+  return { inputBucket: new TokenBucket(90, 60), msgBucket: new TokenBucket(30, 10), strikes: 0, kicked: false, pid: "" };
 }
 
 export class RaceRoom extends Room<RaceState> {
@@ -137,7 +156,7 @@ export class RaceRoom extends Room<RaceState> {
 
   // ---------------------------------------------------------------- lifecycle
 
-  onCreate(): void {
+  onCreate(options?: CreateOptions): void {
     if (RaceRoom.shuttingDown) throw new ServerError(503, "The server is restarting. Try again in a moment.");
     if (activeRoomCount() >= MAX_ROOMS) throw new ServerError(503, "The server is full. Try again later.");
 
@@ -145,6 +164,23 @@ export class RaceRoom extends Room<RaceState> {
     this.roomId = code;
     this.state.code = code;
     void this.setPrivate(true);
+    if (options?.trial === true || options?.weekly === true) {
+      // A time trial is one driver against the clock.
+      const st = this.state;
+      st.trial = true;
+      st.laps = TRIAL_LAPS;
+      st.chaos = 0;
+      this.maxClients = 1;
+      if (options.weekly === true) {
+        const c = weeklyChallenge(Date.now());
+        st.weekly = true;
+        st.trackId = c.trackId;
+        st.speed = c.speed;
+      } else {
+        if (typeof options.trackId === "string" && TRACK_DEFS[options.trackId]) st.trackId = options.trackId;
+        if (typeof options.speed === "number" && Number.isInteger(options.speed) && options.speed >= 0 && options.speed < SPEED_CLASSES.length) st.speed = options.speed;
+      }
+    }
 
     this.onMessage(MSG.INPUT, (client, payload) => this.onInput(client, payload));
 
@@ -158,9 +194,12 @@ export class RaceRoom extends Room<RaceState> {
       player.ready = ready === true;
     });
 
-    this.on(MSG.KART, (client, player, payload: { color?: unknown }) => {
+    this.on(MSG.KART, (client, player, payload: { color?: unknown; vehicle?: unknown; avatar?: unknown }) => {
       if (this.state.phase !== "lobby" && this.state.phase !== "results") return;
+      if (payload?.vehicle !== undefined) player.vehicle = pickIndex(payload.vehicle, VEHICLES.length, player.vehicle);
+      if (payload?.avatar !== undefined) player.avatar = pickIndex(payload.avatar, AVATARS.length, player.avatar);
       const color = payload?.color;
+      if (color === undefined) return;
       if (typeof color !== "number" || !Number.isInteger(color) || color < 0 || color >= KART_COLORS.length) return;
       for (const other of this.state.players.values()) {
         if (other !== player && other.color === color) {
@@ -182,8 +221,11 @@ export class RaceRoom extends Room<RaceState> {
 
     this.on(MSG.SETTINGS, (client, _player, payload: { laps?: unknown; trackId?: unknown; chaos?: unknown; speed?: unknown }) => {
       if (!this.isHost(client) || this.state.phase !== "lobby") return;
+      // The weekly challenge is the same for everyone; a time trial always runs its own laps with no chaos.
+      if (this.state.weekly) return;
+      const trial = this.state.trial;
       const laps = payload?.laps;
-      if (typeof laps === "number" && Number.isInteger(laps) && laps >= MIN_LAPS && laps <= MAX_LAPS) {
+      if (!trial && typeof laps === "number" && Number.isInteger(laps) && laps >= MIN_LAPS && laps <= MAX_LAPS) {
         this.state.laps = laps;
       }
       const trackId = payload?.trackId;
@@ -191,7 +233,7 @@ export class RaceRoom extends Room<RaceState> {
         this.state.trackId = trackId;
       }
       const chaos = payload?.chaos;
-      if (typeof chaos === "number" && Number.isInteger(chaos) && chaos >= 0 && chaos <= 2) this.state.chaos = chaos;
+      if (!trial && typeof chaos === "number" && Number.isInteger(chaos) && chaos >= 0 && chaos <= 2) this.state.chaos = chaos;
       const speed = payload?.speed;
       if (typeof speed === "number" && Number.isInteger(speed) && speed >= 0 && speed < SPEED_CLASSES.length) this.state.speed = speed;
     });
@@ -219,6 +261,13 @@ export class RaceRoom extends Room<RaceState> {
       this.startCountdown(client);
     });
 
+    // Time trial: throw the run away and line up on the grid again.
+    this.on(MSG.RESTART, (client) => {
+      if (!this.state.trial || !this.isHost(client) || this.state.phase === "lobby") return;
+      if (this.state.phase === "countdown" && Date.now() < this.state.raceStartAt - 1500) return;
+      this.startCountdown(client);
+    });
+
     this.on(MSG.TO_LOBBY, (client) => {
       if (!this.isHost(client) || this.state.phase !== "results") return;
       this.toLobby();
@@ -238,12 +287,16 @@ export class RaceRoom extends Room<RaceState> {
       throw new ServerError(409, "A race is in progress. Try again when it finishes.");
     }
 
-    client.userData = newMeta();
+    const meta = newMeta();
+    if (typeof options?.pid === "string" && /^[a-z0-9-]{8,40}$/.test(options.pid)) meta.pid = options.pid;
+    client.userData = meta;
     const player = new PlayerState();
     player.id = client.sessionId;
     player.name = this.uniqueName(name);
     player.slot = this.freeSlot();
     player.color = this.pickColor(options?.color);
+    player.vehicle = pickIndex(options?.vehicle, VEHICLES.length);
+    player.avatar = pickIndex(options?.avatar, AVATARS.length);
     this.state.players.set(client.sessionId, player);
     if (!this.state.players.has(this.state.hostId)) this.state.hostId = client.sessionId;
     log.info("player_joined", { room: this.roomId, player: client.sessionId, players: this.state.players.size });
@@ -413,6 +466,7 @@ export class RaceRoom extends Room<RaceState> {
     }
     entrants.forEach((p, gridPos) => {
       const kart = placeOnGrid(createKartState(), this.track, gridPos);
+      kart.veh = p.vehicle;
       this.racers.set(p.id, {
         id: p.id,
         slot: p.slot,
@@ -425,6 +479,7 @@ export class RaceRoom extends Room<RaceState> {
         gridPlace: gridPos + 1,
         draft: 0,
         revAt: 0,
+        ghost: [],
         stats: { peak: 0, driftBoosts: 0, airTicks: 0, hazardHits: 0, itemHits: 0, tricks: 0, drafts: 0 },
         queue: [],
         lastSeq: 0,
@@ -446,7 +501,8 @@ export class RaceRoom extends Room<RaceState> {
     this.acc = 0;
     this.finishDeadlineMs = 0;
     this.items.reset(this.track);
-    this.boxReady = this.track.boxes.map(() => 0);
+    // No power-ups in a time trial: every box counts as already taken, for the whole run.
+    this.boxReady = this.track.boxes.map(() => (st.trial ? Number.MAX_SAFE_INTEGER : 0));
     this.ctx.event = 0;
     this.ctx.from = 0;
     this.ctx.to = 0;
@@ -485,7 +541,8 @@ export class RaceRoom extends Room<RaceState> {
     for (const p of st.players.values()) p.ready = false;
     void this.unlock();
     st.eventId = 0;
-    this.giveAwards();
+    if (st.trial) this.scoreTrial();
+    else this.giveAwards();
 
     const results: Record<string, unknown>[] = [];
     for (const p of st.players.values()) {
@@ -703,6 +760,9 @@ export class RaceRoom extends Room<RaceState> {
     if (k.air) r.stats.airTicks++;
     if (wasDrift && k.driftDir === 0 && k.boost > boostBefore) r.stats.driftBoosts++;
     if (trickBefore && !k.air && k.boost > boostBefore) r.stats.tricks++;
+    if (this.state.trial && k.tick % 3 === 0 && r.ghost.length < 80_000) {
+      r.ghost.push(q16(k.x * 20), q16(k.y * 20), q16(k.z * 20), q16(Math.atan2(Math.sin(k.heading), Math.cos(k.heading)) * 10000));
+    }
     if (!wasSpin && k.spin > 0) {
       if (r.itemSpin) r.itemSpin = false;
       else {
@@ -742,6 +802,27 @@ export class RaceRoom extends Room<RaceState> {
         if (this.finishDeadlineMs === 0) this.finishDeadlineMs = raceMs + FINISH_GRACE_MS;
         break;
       }
+    }
+  }
+
+  /** Put a finished time-trial run on the leaderboards and tell the driver where it stands. */
+  private scoreTrial(): void {
+    const st = this.state;
+    for (const r of this.order) {
+      const p = st.players.get(r.id);
+      const client = this.clients.find((c) => c.sessionId === r.id);
+      if (!p || !client || !p.finished || p.finishMs <= 0) continue;
+      const pid = (client.userData as ClientMeta | undefined)?.pid ?? "";
+      const result: TrialResult = { raceMs: p.finishMs, lapMs: p.bestLapMs, rank: 0, weekRank: 0, previousMs: 0, improved: false, recordMs: 0, recordName: "", saved: false };
+      if (!pid) {
+        client.send(MSG.TRIAL, result);
+        continue;
+      }
+      const ghost = Buffer.from(Int16Array.from(r.ghost).buffer).toString("base64");
+      void submitRun({ trackId: st.trackId, speed: st.speed, week: weekIndex(Date.now()), pid, name: p.name, color: p.color, vehicle: p.vehicle, avatar: p.avatar, raceMs: p.finishMs, lapMs: p.bestLapMs, ghost }).then((standing) => {
+        client.send(MSG.TRIAL, { ...result, ...standing, improved: standing.saved && (standing.previousMs === 0 || p.finishMs < standing.previousMs) });
+        log.info("trial_scored", { room: this.roomId, track: st.trackId, speed: st.speed, raceMs: p.finishMs, lapMs: p.bestLapMs, rank: standing.rank, saved: standing.saved });
+      });
     }
   }
 
@@ -815,7 +896,7 @@ export class RaceRoom extends Room<RaceState> {
       }
       return;
     }
-    if (!CHAOS_ENABLED || this.raceTick < this.nextEventTick) return;
+    if (!CHAOS_ENABLED || st.trial || this.raceTick < this.nextEventTick) return;
     const pace = CHAOS_PACE[st.chaos] ?? CHAOS_PACE[0];
     if (Math.random() > pace.chance) {
       this.scheduleEvent();

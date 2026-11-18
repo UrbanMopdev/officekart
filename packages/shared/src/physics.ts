@@ -12,7 +12,7 @@
  * functions of the kart's own tick counter, which travels with its state, so
  * the client's prediction and the server always agree.
  */
-import { DT, EVENT, GRAVITY, KART, KART_RADIUS, SLOPE_PULL, SURFACE_PHYSICS, TRICK } from "./constants";
+import { DT, EVENT, GRAVITY, KART, KART_RADIUS, SLOPE_PULL, SURFACE_PHYSICS, TRICK, VEHICLES } from "./constants";
 import { groundHeight, hazardPose, locate, onBoostPad, surfaceAt, type HazardPose, type Located, type Track } from "./track";
 
 export interface KartInput {
@@ -85,6 +85,8 @@ export interface KartState {
   airT: number;
   /** 1 once a trick has been pulled on the current jump; pays out as a boost on landing. */
   trick: number;
+  /** Index into VEHICLES. Set on the grid and never changed during a race. */
+  veh: number;
   water: boolean;
   /** The drift button was down on the previous tick (tricks need a fresh press). */
   dk: boolean;
@@ -108,7 +110,7 @@ export function decodeInput(bits: number, steer: number, out: KartInput): KartIn
   return out;
 }
 
-const NUMERIC: (keyof KartState)[] = ["x", "z", "heading", "vAngle", "speed", "driftDir", "driftCharge", "boost", "idx", "pos", "y", "vy", "surf", "safe", "tick", "spin", "immune", "shield", "phantom", "slow", "reverse", "emp", "sizeT", "sizeK", "airT", "trick"];
+const NUMERIC: (keyof KartState)[] = ["x", "z", "heading", "vAngle", "speed", "driftDir", "driftCharge", "boost", "idx", "pos", "y", "vy", "surf", "safe", "tick", "spin", "immune", "shield", "phantom", "slow", "reverse", "emp", "sizeT", "sizeK", "airT", "trick", "veh"];
 const FLAGS: (keyof KartState)[] = ["offroad", "air", "water", "dk"];
 /** Numbers in the wire format of one kart state. */
 export const STATE_SIZE = NUMERIC.length + FLAGS.length;
@@ -266,6 +268,7 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   const driftPress = driftKey && !s.dk;
   s.dk = input.drift;
   const k = ctx.speed;
+  const V = VEHICLES[s.veh] ?? VEHICLES[0];
   const giant = s.sizeT > 0 && s.sizeK > 0;
   const mini = s.sizeT > 0 && s.sizeK < 0;
 
@@ -275,7 +278,7 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   // so small hops never cut the throttle or the steering.
   const grounded = !s.air || s.airT < 4;
   const surface = SURFACE_PHYSICS[grounded ? s.surf : 0];
-  let maxSpeed: number = KART.maxSpeed * k;
+  let maxSpeed: number = KART.maxSpeed * k * V.speed;
   if (boosting) maxSpeed += KART.boostExtraSpeed * k;
   if (s.offroad) maxSpeed *= boosting ? KART.offroadBoostSpeedMul : KART.offroadSpeedMul;
   else if (!boosting) maxSpeed *= surface.speed;
@@ -291,7 +294,7 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   if (grounded) s.speed -= slopeDir * SLOPE_PULL * dt;
 
   // --- Throttle, brake, reverse, drag.
-  const accelMul = surface.accel * (s.water ? 0.75 : 1);
+  const accelMul = surface.accel * (s.water ? 0.75 : 1) * V.accel;
   if (!grounded) {
     // In the air (or drifting through water) the wheels do nothing.
     s.speed -= s.speed * (s.water ? 0.25 : 0.06) * dt;
@@ -302,7 +305,8 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
       s.speed = Math.min(maxSpeed, s.speed + KART.accel * k * accelMul * fade * (boosting ? KART.boostAccelMul : 1) * dt);
     }
   } else if (throttle < 0) {
-    if (s.speed > 0.5) s.speed -= KART.brake * k * dt;
+    // Braking in a drift only trims speed, so a slide can be tightened without ending it.
+    if (s.speed > 0.5) s.speed -= KART.brake * k * (s.driftDir !== 0 ? 0.4 : 1) * dt;
     else s.speed -= KART.reverseAccel * dt;
   } else {
     const d = (spinning ? KART.drag * 2.5 : KART.drag) * dt;
@@ -321,12 +325,16 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
     if (!driftKey || s.speed < KART.driftMinSpeed * 0.7) {
       const level = driftKey ? 0 : driftLevel(s.driftCharge);
       if (level > 0 && s.emp <= 0) s.boost = Math.max(s.boost, KART.driftBoost[level - 1]);
+      // The slide snaps straight on release, so the turbo fires where the nose points.
+      if (level > 0) s.vAngle += angleDiff(s.heading, s.vAngle) * 0.7;
       s.driftDir = 0;
       s.driftCharge = 0;
     }
-  } else if (grounded && !s.water && driftKey && Math.abs(steer) > 0.3 && s.speed >= KART.driftMinSpeed) {
+  } else if (grounded && !s.water && driftKey && Math.abs(steer) > 0.2 && s.speed >= KART.driftMinSpeed) {
     s.driftDir = steer > 0 ? 1 : -1;
     s.driftCharge = 0;
+    // The tail steps out the moment the button goes down.
+    s.heading -= s.driftDir * KART.driftKick;
   }
 
   // --- Steering. Heading decreases when turning right (see forward vector).
@@ -338,12 +346,13 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   let grip: number;
   if (s.driftDir !== 0) {
     const into = steer * s.driftDir; // 1 = steering into the drift, -1 = counter-steering
-    turn = s.driftDir * KART.driftTurn * (0.62 + 0.5 * into);
-    if (grounded) s.driftCharge += dt * (0.75 + 0.45 * Math.max(0, into));
+    // Steering into the slide pulls it tight; steering against it runs it wide. Both keep the drift alive.
+    turn = s.driftDir * KART.driftTurn * Math.sqrt(V.drift) * Math.max(0.14, 0.55 + 0.6 * into);
+    if (grounded) s.driftCharge += dt * (0.7 + 0.6 * Math.max(0, into)) * V.drift;
     grip = KART.driftGrip * Math.max(0.35, gripMul);
   } else {
     const damp = 1 - KART.turnSpeedDamp * Math.min(1, absSpeed / (KART.maxSpeed * k));
-    turn = steer * KART.turnRate * damp * turnMul;
+    turn = steer * KART.turnRate * damp * turnMul * V.turn;
     grip = KART.grip * gripMul;
   }
   if (!grounded) {
@@ -523,11 +532,16 @@ export function collideKarts(a: KartState, b: KartState): boolean {
   const d = Math.sqrt(d2);
   const nx = d > 1e-4 ? dx / d : 1;
   const nz = d > 1e-4 ? dz / d : 0;
-  const push = (min - d) / 2;
-  a.x -= nx * push;
-  a.z -= nz * push;
-  b.x += nx * push;
-  b.z += nz * push;
+  // Heavier vehicles give less ground and take less of the bump.
+  const ma = (VEHICLES[a.veh] ?? VEHICLES[0]).weight;
+  const mb = (VEHICLES[b.veh] ?? VEHICLES[0]).weight;
+  const sa = mb / (ma + mb);
+  const sb = ma / (ma + mb);
+  const push = min - d;
+  a.x -= nx * push * sa;
+  a.z -= nz * push * sa;
+  b.x += nx * push * sb;
+  b.z += nz * push * sb;
 
   const avx = Math.sin(a.vAngle) * a.speed;
   const avz = Math.cos(a.vAngle) * a.speed;
@@ -535,16 +549,16 @@ export function collideKarts(a: KartState, b: KartState): boolean {
   const bvz = Math.cos(b.vAngle) * b.speed;
   const closing = (avx - bvx) * nx + (avz - bvz) * nz;
   if (closing > 0) {
-    const j = closing * 0.75; // equal masses, partly elastic
-    applyVelocity(a, avx - nx * j, avz - nz * j);
-    applyVelocity(b, bvx + nx * j, bvz + nz * j);
+    const j = closing * 1.5; // partly elastic, shared out by weight
+    applyVelocity(a, avx - nx * j * sa, avz - nz * j * sa);
+    applyVelocity(b, bvx + nx * j * sb, bvz + nz * j * sb);
   }
   return true;
 }
 
 function applyVelocity(s: KartState, vx: number, vz: number): void {
   // A shunt can never push a kart past its boosted top speed.
-  const sp = Math.min(Math.hypot(vx, vz), KART.maxSpeed + KART.boostExtraSpeed);
+  const sp = Math.min(Math.hypot(vx, vz), (KART.maxSpeed + KART.boostExtraSpeed) * 1.7);
   if (sp < 0.05) {
     s.speed = 0;
     return;

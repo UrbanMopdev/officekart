@@ -19,8 +19,11 @@ import {
   getTrack,
   type Notice,
   type Phase,
+  type CreateOptions,
+  type JoinOptions,
   type PlayerView,
   type RoomView,
+  type TrialResult,
 } from "@office-kart/shared";
 import { revHeld, sampleInput, setInputEnabled } from "../game/input";
 import { useStore } from "../store";
@@ -96,6 +99,8 @@ function toView(state: any): RoomView {
       finishMs: p.finishMs,
       bestLapMs: p.bestLapMs,
       item: p.item ?? 0,
+      vehicle: p.vehicle ?? 0,
+      avatar: p.avatar ?? 0,
       charges: p.charges ?? 0,
       wins: p.wins ?? 0,
       points: p.points ?? 0,
@@ -117,6 +122,8 @@ function toView(state: any): RoomView {
     players,
     chaos: state.chaos ?? 0,
     speed: state.speed ?? 0,
+    trial: state.trial === true,
+    weekly: state.weekly === true,
     eventId: state.eventId ?? 0,
     eventFrom: state.eventFrom ?? 0,
     eventTo: state.eventTo ?? 0,
@@ -157,12 +164,12 @@ class Net {
   startPreview(trackId: string, at: number): void {
     const track = getTrack(trackId);
     const players: PlayerView[] = ["You", "Priya", "Marcus", "Jo", "Sam", "Ines"].map((name, i) => ({
-      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, charges: 1, wins: 0, points: 0, vote: "", note: "",
+      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, charges: 1, vehicle: i % 5, avatar: i, wins: 0, points: 0, vote: "", note: "",
     }));
     useStore.getState().set({
       status: "connected",
       myId: "p0",
-      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players, chaos: 0, speed: 0, eventId: 0, eventFrom: 0, eventTo: 0, hzOff: 0, voteEndsAt: 0, awards: [] },
+      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players, chaos: 0, speed: 0, trial: false, weekly: false, eventId: 0, eventFrom: 0, eventTo: 0, hzOff: 0, voteEndsAt: 0, awards: [] },
     });
     const t0 = performance.now();
     this.previewStart = t0;
@@ -189,12 +196,18 @@ class Net {
 
   // ------------------------------------------------------------- connecting
 
-  async create(name: string): Promise<boolean> {
-    return this.connect(() => this.client.create(ROOM_NAME, { name }));
+  /** Who we are, as sent when creating or joining a room. */
+  private identity(name: string): JoinOptions {
+    const { vehicle, avatar, pid } = useStore.getState();
+    return { name, vehicle, avatar, pid };
+  }
+
+  async create(name: string, mode: Omit<CreateOptions, keyof JoinOptions> = {}): Promise<boolean> {
+    return this.connect(() => this.client.create(ROOM_NAME, { ...this.identity(name), ...mode }));
   }
 
   async join(code: string, name: string): Promise<boolean> {
-    return this.connect(() => this.client.joinById(code, { name }));
+    return this.connect(() => this.client.joinById(code, this.identity(name)));
   }
 
   /** After a page refresh, try to slip back into the seat we were holding. */
@@ -264,6 +277,7 @@ class Net {
     room.onMessage(MSG.SELF, (msg: number[]) => {
       this.predictor.reconcile(msg);
     });
+    room.onMessage(MSG.TRIAL, (result: TrialResult) => useStore.getState().set({ trialResult: result }));
     room.onMessage(MSG.PONG, (msg: [number, number]) => this.onPong(msg));
     room.onMessage(MSG.NOTICE, (notice: Notice) => useStore.getState().showToast(notice));
     room.onMessage("*", () => {});
@@ -358,11 +372,13 @@ class Net {
       // A new race (or our first look at this room): start from a clean slate.
       this.raceNumber = view.raceNumber;
       this.predictor.reset(getTrack(view.trackId));
+      // Our vehicle is part of the simulation, so prediction has to know it from the first tick.
+      this.predictor.state.veh = view.players.find((p) => p.id === this.room?.sessionId)?.vehicle ?? 0;
       this.snaps = [];
       this.acc = 0;
       this.entities = [];
       this.taken = new Set();
-      useStore.getState().set({ spectate: 0 });
+      useStore.getState().set({ spectate: 0, trialResult: null });
     }
     // Chaos events and hazard timing are part of the simulation, so prediction needs them too.
     const ctx = this.predictor.ctx;

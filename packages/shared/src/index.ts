@@ -7,6 +7,8 @@ export * from "./prediction";
 
 import { buildTrack, type Track, type TrackDef } from "./track";
 import { CHAOS_TRACKS } from "./tracks/chaosTracks";
+import { DEFAULT_SPEED_CLASS, weekBounds, weekIndex } from "./constants";
+import type { Challenge } from "./protocol";
 import { PROVING_GROUNDS } from "./tracks/provingGrounds";
 
 /** Every selectable track, in lobby order: the eight circuits, then the test track. */
@@ -26,4 +28,13 @@ export function getTrack(id: string): Track {
     built.set(id, t);
   }
   return t;
+}
+
+/** This week's time-trial challenge: one track, at the standard speed class, the same for everyone. */
+export function weeklyChallenge(now: number): Challenge {
+  const week = weekIndex(now);
+  const n = CHAOS_TRACKS.length;
+  // Stepping by 5 visits all eight tracks before repeating, without going in list order.
+  const trackId = CHAOS_TRACKS[(((week * 5 + 3) % n) + n) % n].id;
+  return { week, trackId, speed: DEFAULT_SPEED_CLASS, ...weekBounds(week) };
 }
