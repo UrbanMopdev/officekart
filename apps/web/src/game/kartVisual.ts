@@ -3,6 +3,7 @@
  * kart; each kart only owns its paint materials, so twelve karts cost little.
  */
 import * as THREE from "three";
+import { kitDriver, kitReady, kitVehicle, tintedMaterial } from "./models";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FLAG, FX, KART_COLORS } from "@office-kart/shared";
@@ -380,6 +381,17 @@ export class KartVisual {
   steer = 0;
   private readonly body = new THREE.Group();
   private readonly driver = new THREE.Group();
+  // --- Artist-made model (see models.ts). Replaces the built-in kart once the files have loaded.
+  private kit: THREE.Group | null = null;
+  private kitKey = "";
+  private kitWheels: { mesh: THREE.Mesh; radius: number }[] = [];
+  private kitSteer: THREE.Group[] = [];
+  private kitDriver: THREE.Mesh | null = null;
+  private kitDriverY = 0;
+  private kitTint: THREE.Color | null = null;
+  private kitHelmet: THREE.Color | null = null;
+  private kitMats: THREE.MeshStandardMaterial[] = [];
+  private shadowsOn = true;
   private readonly rider = new THREE.Group();
   private readonly head = new THREE.Group();
   private readonly wheel = new THREE.Group();
@@ -518,6 +530,10 @@ export class KartVisual {
   }
 
   setLook(look: KartLook): void {
+    this.shadowsOn = look.shadows;
+    this.kit?.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) o.castShadow = look.shadows;
+    });
     for (const m of this.meshes) m.castShadow = look.shadows && m.material !== shared!.visorMat && m.material !== shared!.lightsMat;
     this.blob.visible = !look.shadows;
     this.glow.visible = look.underglow;
@@ -525,6 +541,11 @@ export class KartVisual {
 
   /** Swap the bodywork and the driver's look. Cheap to call every frame: it only acts on a change. */
   setStyle(vehicle: number, avatar: number): void {
+    if (kitReady()) {
+      const key = `${vehicle}:${avatar}`;
+      if (key !== this.kitKey) this.buildKit(vehicle, avatar, key);
+      if (this.kit) return;
+    }
     if (vehicle !== this.vehicle) {
       this.vehicle = vehicle;
       const v = vehicleParts(vehicle);
@@ -552,6 +573,66 @@ export class KartVisual {
     }
   }
 
+  /** Assemble this kart from the loaded models: bodywork in the player's colour, wheels that turn, and a driver. */
+  private buildKit(vehicle: number, avatar: number, key: string): void {
+    const v = kitVehicle(vehicle, avatar);
+    if (!v) return;
+    this.kitKey = key;
+    if (this.kit) this.body.remove(this.kit);
+    for (const m of this.kitMats) m.dispose();
+    this.kitMats = [];
+    this.kitWheels = [];
+    this.kitSteer = [];
+    this.kitDriver = null;
+    this.kitHelmet = null;
+    for (const m of this.bodyMeshes) m.visible = false;
+    this.driver.visible = false;
+    for (const pivot of this.wheelPivots) pivot.visible = false;
+
+    const kit = new THREE.Group();
+    kit.scale.setScalar(v.scale);
+    const { material, tint } = tintedMaterial(v.material, v.paint);
+    this.kitTint = tint;
+    this.kitMats.push(material);
+    kit.add(new THREE.Mesh(v.body, material));
+    for (const w of v.wheels) {
+      const pivot = new THREE.Group();
+      pivot.position.copy(w.pos);
+      const mesh = new THREE.Mesh(w.geo, material);
+      pivot.add(mesh);
+      kit.add(pivot);
+      this.kitWheels.push({ mesh, radius: w.radius * v.scale });
+      if (w.front) this.kitSteer.push(pivot);
+    }
+    const d = kitDriver(avatar);
+    if (v.seat && d) {
+      const suit = tintedMaterial(d.material, d.paint);
+      this.kitHelmet = suit.tint;
+      this.kitMats.push(suit.material);
+      const driver = new THREE.Mesh(d.geo, suit.material);
+      driver.position.set(v.seat[0], v.seat[1], v.seat[2]);
+      driver.scale.setScalar(v.seat[3]);
+      this.kitDriverY = v.seat[1];
+      this.kitDriver = driver;
+      kit.add(driver);
+    }
+    kit.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) o.castShadow = this.shadowsOn;
+    });
+    this.flames.forEach((f, i) => f.position.set(i === 0 ? -v.tail[0] : v.tail[0], 0.55, v.tail[1]));
+    this.label.position.y = v.labelY;
+    this.kit = kit;
+    this.body.add(kit);
+    this.paintKit();
+    this.ghost = false;
+  }
+
+  private paintKit(): void {
+    if (this.colorIndex < 0) return;
+    this.kitTint?.set(KART_COLORS[this.colorIndex % KART_COLORS.length]);
+    this.kitHelmet?.set(KART_COLORS[this.colorIndex % KART_COLORS.length]);
+  }
+
   setIdentity(name: string, colorIndex: number, showLabel: boolean): void {
     if (colorIndex !== this.colorIndex) {
       this.colorIndex = colorIndex;
@@ -560,6 +641,7 @@ export class KartVisual {
       this.paint.color.copy(base).multiplyScalar(0.82);
       this.accent.color.copy(base).lerp(new THREE.Color("#ffffff"), 0.55);
       this.glow.material.color.copy(base).multiplyScalar(2.2);
+      this.paintKit();
       this.labelText = "";
     }
     if (name !== this.labelText) {
@@ -598,7 +680,7 @@ export class KartVisual {
     const ghost = (fx & FX.PHANTOM) !== 0;
     if (ghost !== this.ghost) {
       this.ghost = ghost;
-      for (const m of [this.paint, this.accent]) {
+      for (const m of [this.paint, this.accent, ...this.kitMats]) {
         m.transparent = ghost;
         m.opacity = ghost ? 0.35 : 1;
         m.needsUpdate = true;
@@ -676,6 +758,11 @@ export class KartVisual {
     this.rider.rotation.x = Math.max(-0.12, Math.min(0.16, accel * 0.004)) + this.squash * 0.5;
     const wobble = spun ? Math.sin(time * 19) * 0.4 : 0;
     this.head.rotation.set(this.squash * 0.9 + (spun ? Math.sin(time * 23) * 0.2 : 0), -this.steer * 0.5 + this.slide * 0.5 + wobble, this.steer * 0.1 + wobble * 0.5);
+    if (this.kitDriver) {
+      // The modelled driver leans and turns as one piece, bounces in the seat for a trick and wobbles when hit.
+      this.kitDriver.rotation.set(this.rider.rotation.x * 1.2, -this.steer * 0.35 + wobble, lean * 1.6 + wobble * 0.4);
+      this.kitDriver.position.y = this.kitDriverY + this.armsUp * 0.07 * (1 + Math.sin(time * 16)) - this.squash * 0.12;
+    }
     const turn = -this.steer * 1.35 + (spun ? Math.sin(time * 30) * 0.8 : 0);
     this.wheel.rotation.set(WHEEL_TILT, 0, turn);
     const ct = Math.cos(WHEEL_TILT);
@@ -704,6 +791,8 @@ export class KartVisual {
 
     const spin = (speed * dt) / 0.42;
     for (const w of this.wheels) w.rotation.x += spin;
+    for (const w of this.kitWheels) w.mesh.rotation.x += (speed * dt) / w.radius;
+    for (const pivot of this.kitSteer) pivot.rotation.y = -this.steer * 0.42;
     for (const p of this.pivots) p.rotation.y = -this.steer * 0.42;
 
     for (let i = 0; i < this.flames.length; i++) {
@@ -735,5 +824,6 @@ export class KartVisual {
     this.paint.dispose();
     this.accent.dispose();
     this.flameMat.dispose();
+    for (const m of this.kitMats) m.dispose();
   }
 }

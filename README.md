@@ -109,6 +109,14 @@ out the moment the button goes down, braking in a drift trims speed without endi
 the slide snaps straight so the turbo fires where the nose points. Turbo levels charge after 0.55, 1.3
 and 2.2 s.
 
+**Vehicle and driver models.** The karts, vehicles and drivers on screen are artist-made models from
+Kenney's Car Kit (3.1) and Racing Starter Kit, both Creative Commons Zero; their licence files sit beside
+the models in `apps/web/public/models`. `apps/web/src/game/models.ts` loads them at start-up, separates
+bodywork, wheels and driver, and repaints one colour swatch per model (bodywork and helmet) in the
+player's colour. Go-Kart, Motorbike, Race Car, Digger and Hot Hatch map to the five vehicle stat lines;
+the five drivers are Kenney's kart racers. If the files cannot be fetched the game falls back to the
+built-in generated karts.
+
 ### Not built, or simplified
 
 - Split paths, alternate routes and hidden shortcuts. Every track has one racing line, so there is no

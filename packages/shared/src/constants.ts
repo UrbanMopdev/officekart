@@ -85,14 +85,14 @@ export const KART = {
  */
 export const VEHICLES = [
   { name: "Go-Kart", tag: "Balanced. Good at everything.", speed: 1, accel: 1, turn: 1, drift: 1, weight: 1 },
-  { name: "Scooter", tag: "Quick off the line and nimble, but light and a little slower flat out.", speed: 0.975, accel: 1.3, turn: 1.14, drift: 1.05, weight: 0.65 },
-  { name: "Hot Rod", tag: "Highest top speed. Slow to get going and wide in corners.", speed: 1.045, accel: 0.8, turn: 0.9, drift: 0.94, weight: 1.15 },
-  { name: "Forklift", tag: "Heavy. Shoves others aside and barely notices a bump.", speed: 1.005, accel: 0.95, turn: 0.95, drift: 0.92, weight: 1.8 },
-  { name: "Drifter", tag: "Drift specialist: tighter slides that charge faster.", speed: 0.99, accel: 1.05, turn: 1, drift: 1.3, weight: 0.9 },
+  { name: "Motorbike", tag: "Quick off the line and nimble, but light and a little slower flat out.", speed: 0.975, accel: 1.3, turn: 1.14, drift: 1.05, weight: 0.65 },
+  { name: "Race Car", tag: "Highest top speed. Slow to get going and wide in corners.", speed: 1.045, accel: 0.8, turn: 0.9, drift: 0.94, weight: 1.15 },
+  { name: "Digger", tag: "Heavy. Shoves others aside and barely notices a bump.", speed: 1.005, accel: 0.95, turn: 0.95, drift: 0.92, weight: 1.8 },
+  { name: "Hot Hatch", tag: "Drift specialist: tighter slides that charge faster.", speed: 0.99, accel: 1.05, turn: 1, drift: 1.3, weight: 0.9 },
 ] as const;
 
 /** Driver looks. Purely cosmetic. */
-export const AVATARS = ["Racer", "Cat", "Robot", "Boss", "Intern", "Royal", "Alien", "Unicorn", "Astronaut", "Chef"] as const;
+export const AVATARS = ["Oobi", "Oodi", "Ooli", "Oopi", "Oozi"] as const;
 
 /** Time trials: solo, no power-ups, no chaos events, always this many laps. */
 export const TRIAL_LAPS = 3;

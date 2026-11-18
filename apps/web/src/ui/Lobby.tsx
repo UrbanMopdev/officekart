@@ -5,7 +5,7 @@ import { useMe, useStore, type Quality } from "../store";
 import { BoardPanel } from "./Leaderboard";
 import { Button, Panel } from "./common";
 
-const AVATAR_ICONS = ["🏁", "🐱", "🤖", "🎩", "🧢", "👑", "👽", "🦄", "🧑‍🚀", "👨‍🍳"];
+const AVATAR_ICONS = ["🟠", "🟢", "🔵", "🟣", "🔴"];
 /** Stat bars: label, field, and the range across all vehicles. */
 const STATS: [string, "speed" | "accel" | "turn" | "drift" | "weight", number, number][] = [
   ["Top speed", "speed", 0.97, 1.05],

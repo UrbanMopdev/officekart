@@ -185,7 +185,7 @@ class Net {
     const moving = new URLSearchParams(location.search).has("drive");
     const lineup = new URLSearchParams(location.search).has("lineup");
     const firstAvatar = Number(new URLSearchParams(location.search).get("avatars")) || 0;
-    if (firstAvatar) for (const p of players) p.avatar = (p.avatar + firstAvatar) % 10;
+    for (const p of players) p.avatar = (p.avatar + firstAvatar) % 5;
     this.preview = (slot, out) => {
       const travel = moving ? ((performance.now() - t0) / 1000) * 28 : 0;
       // ?lineup parks the karts in a row just ahead of the camera, to look at the models.
