@@ -395,6 +395,8 @@ export class KartVisual {
   private kitHelmet: THREE.Color | null = null;
   private kitMats: THREE.MeshStandardMaterial[] = [];
   /** Second colour on two-tone cars: the player colour, lightened. */
+  private kitTail: THREE.MeshBasicMaterial | null = null;
+  private braking = 0;
   /** Where the driver's eyes are, for the first-person view: height and distance ahead of centre. */
   eye: [number, number] = [1.5, 0];
   private firstPerson = false;
@@ -654,6 +656,8 @@ export class KartVisual {
     const kit = new THREE.Group();
     kit.scale.setScalar(v.scale);
     this.kitSecond = null;
+    this.kitTail?.dispose();
+    this.kitTail = null;
     this.kitCar = !!v.car;
     if (v.bike) this.buildBike(kit, v);
     else if (v.car) this.buildCar(kit, v);
@@ -782,10 +786,14 @@ export class KartVisual {
       this.kitMats.push(light);
       second = light;
     }
+    // Tail lamps are this car's own, so they can flare under braking.
+    const tailMat = (carFinish("tail") as THREE.MeshBasicMaterial).clone();
+    this.kitTail = tailMat;
+    const finish = (f: Parameters<typeof carFinish>[0]) => (f === "tail" ? tailMat : carFinish(f));
     const shell = new THREE.Group();
     // Centre the wheelbase on the kart and set the ride height.
     shell.position.set(0, t.ride, car.offsetZ);
-    for (const part of car.body) shell.add(new THREE.Mesh(part.geo, part.finish === "paint1" ? paint : part.finish === "paint2" ? second : carFinish(part.finish)));
+    for (const part of car.body) shell.add(new THREE.Mesh(part.geo, part.finish === "paint1" ? paint : part.finish === "paint2" ? second : finish(part.finish)));
     if (t.wing) {
       const carbon = carFinish("paint2");
       const blade = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.035, 0.34), carbon);
@@ -810,7 +818,7 @@ export class KartVisual {
         const head = new THREE.Mesh(lamp, carFinish("head"));
         head.scale.set(0.13, 0.05, 0.03);
         head.position.set(x * car.lamps.half * 0.66, car.top * 0.44, car.lamps.front - 0.1);
-        const tail = new THREE.Mesh(lamp, carFinish("tail"));
+        const tail = new THREE.Mesh(lamp, tailMat);
         tail.scale.set(0.15, 0.045, 0.03);
         tail.position.set(x * car.lamps.half * 0.68, car.top * 0.56, -car.rear + 0.05);
         shell.add(head, tail);
@@ -960,6 +968,12 @@ export class KartVisual {
     const stretch = this.wheelie * 0.07 + (airborne ? 0.03 : 0);
     this.body.scale.set(1 - this.squash * 0.45, 1 + this.squash, 1 - this.squash * 0.45 + stretch);
     this.body.rotation.set(this.pitch - Math.sin(this.wheelie * Math.PI) * 0.13, this.slide + this.spinAngle, this.roll + this.trickAngle);
+    if (this.kitTail) {
+      // Brake lights: flare when the car is shedding speed, glow dimly otherwise.
+      const decel = speed > 0 ? -accel : 0;
+      this.braking += ((decel > 5 && Math.abs(speed) > 2 ? 1 : 0) - this.braking) * Math.min(1, dt * 14);
+      this.kitTail.color.setRGB(1.6 + this.braking * 8, 0.09 + this.braking * 0.5, 0.06 + this.braking * 0.3);
+    }
     if (this.cockpit) {
       // The cabin moves with the car (dive, squat, lean and slide) but is spared spins and stunts.
       this.cockpit.group.rotation.set(this.pitch * 0.8, this.slide * 0.85, this.roll * 0.7);

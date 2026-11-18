@@ -45,6 +45,18 @@ export function TrialResults() {
     detail = `Your best is still ${formatRaceTime(result.previousMs)} (${gap(result.raceMs - result.previousMs)} this run). ${gap(result.raceMs - result.recordMs)} off the record.`;
   }
 
+  // Medals are set by the record on this board: within 3% is gold, 8% silver, 15% bronze.
+  let medal: { name: string; icon: string; style: string; next: string } | null = null;
+  if (finished && result) {
+    const target = result.recordMs > 0 ? Math.min(result.recordMs, result.raceMs) : result.raceMs;
+    const off = result.raceMs / target - 1;
+    const need = (pct: number) => `${((result.raceMs - target * (1 + pct)) / 1000).toFixed(2)} s to find`;
+    if (off <= 0.03) medal = { name: "Gold", icon: "🥇", style: "bg-amber-300 text-amber-950", next: off <= 0 ? "You hold the record." : "Next: the record itself." };
+    else if (off <= 0.08) medal = { name: "Silver", icon: "🥈", style: "bg-slate-200 text-slate-900", next: `Gold: ${need(0.03)}` };
+    else if (off <= 0.15) medal = { name: "Bronze", icon: "🥉", style: "bg-orange-400 text-orange-950", next: `Silver: ${need(0.08)}` };
+    else medal = { name: "No medal yet", icon: "🏁", style: "bg-slate-700 text-white/80", next: `Bronze: ${need(0.15)}` };
+  }
+
   return (
     <div className="absolute inset-0 overflow-y-auto bg-slate-950/55 p-4">
       <div className="mx-auto max-w-3xl animate-rise space-y-4">
@@ -53,6 +65,15 @@ export function TrialResults() {
             {room.weekly ? "Weekly challenge" : "Time trial"} · {TRACK_DEFS[room.trackId]?.name} · {SPEED_CLASSES[room.speed]?.name}
           </div>
           <h1 className={`mt-1 text-center text-3xl font-black ${tone}`}>{headline}</h1>
+          {medal && (
+            <div className="mt-2 text-center">
+              <span className={`inline-flex items-center gap-2 rounded-full px-4 py-1 text-sm font-black uppercase tracking-widest ${medal.style}`}>
+                <span className="text-lg">{medal.icon}</span>
+                {medal.name}
+              </span>
+              <div className="mt-1 text-xs text-white/55">{medal.next}</div>
+            </div>
+          )}
           {finished && me && (
             <div className="mt-3 flex items-end justify-center gap-8">
               <div className="text-center">

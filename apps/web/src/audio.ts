@@ -261,7 +261,11 @@ class AudioEngine {
     if (!ctx || !this.engineOsc || !this.engineSub) return;
     const t = ctx.currentTime;
     const v = Math.min(1.4, Math.abs(speed) / 30);
-    const f = 55 + v * 150 + (boosting ? 35 : 0);
+    // Revs climb through each gear and fall back on the change, matching the dashboard.
+    const kmh = Math.abs(speed) * 3.6;
+    const gear = Math.min(6, 1 + Math.floor(kmh / 38));
+    const rev = gear >= 6 ? Math.min(1.15, 0.25 + ((kmh - 190) / 38) * 0.75) : 0.25 + ((kmh % 38) / 38) * 0.75;
+    const f = 62 + rev * 128 + gear * 5 + (boosting ? 30 : 0);
     this.engineOsc.frequency.setTargetAtTime(f, t, 0.05);
     this.engineSub.frequency.setTargetAtTime(f * 0.5, t, 0.05);
     this.engineFilter.frequency.setTargetAtTime(underwater ? 260 : 500 + v * 1500, t, 0.08);

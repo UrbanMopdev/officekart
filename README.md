@@ -149,6 +149,12 @@ its own bodywork. The choice is saved with the other settings.
 best-lap line, how far ahead or behind your own best lap you are (green ahead, red behind). Best laps are
 kept per track and speed class in the browser.
 
+**Venue, lights and sound.** The realistic circuits have debris fencing in alternating stretches,
+grandstands with crowds on the start straight and marshal posts (all in `TrackSurface.tsx`). Tail lamps
+flare under braking. The engine note climbs through six gears and drops on each change, in step with the
+gear shown on the dashboard. Time trials award a medal against the board record: within 3% gold, 8%
+silver, 15% bronze.
+
 **Pickups and boost strips.** Item boxes are dark flight cases with a lit amber band and a marker light;
 on the realistic circuits boost pads are worn chevrons painted on the tarmac with a faint glow.
 
