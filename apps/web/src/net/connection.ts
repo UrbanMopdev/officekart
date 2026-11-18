@@ -24,7 +24,11 @@ import {
   type PlayerView,
   type RoomView,
   type TrialResult,
+  VEHICLES,
 } from "@office-kart/shared";
+
+/** ?veh=N starts the preview line-up at vehicle N. */
+const PREVIEW_VEH = Number(new URLSearchParams(typeof location === "undefined" ? "" : location.search).get("veh")) || 0;
 import { revHeld, sampleInput, setInputEnabled } from "../game/input";
 import { useStore } from "../store";
 
@@ -164,7 +168,7 @@ class Net {
   startPreview(trackId: string, at: number): void {
     const track = getTrack(trackId);
     const players: PlayerView[] = ["You", "Priya", "Marcus", "Jo", "Sam", "Ines"].map((name, i) => ({
-      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, charges: 1, vehicle: i % 5, avatar: i, wins: 0, points: 0, vote: "", note: "",
+      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, charges: 1, vehicle: (PREVIEW_VEH + i) % VEHICLES.length, avatar: i, wins: 0, points: 0, vote: "", note: "",
     }));
     useStore.getState().set({
       status: "connected",

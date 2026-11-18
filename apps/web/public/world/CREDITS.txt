@@ -23,3 +23,24 @@ Sample Assets: (c) 2024, Darmstadt Graphics Group GmbH, licensed CC BY 4.0
 (https://creativecommons.org/licenses/by/4.0/). The interior, licence plate
 and Khronos logos were removed and the mesh reduced; materials are the game's own.
 https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept
+
+Everyday cars. Each is a simplified version (interior removed, mesh reduced,
+wheels and materials replaced by the game's own) of a model published on
+Sketchfab under a Creative Commons licence:
+
+  models/car_corolla.glb   "toyota-corolla-e170-2017" by Blender Boy
+      https://sketchfab.com/3d-models/toyota-corolla-e170-2017-d87af59849814c5cb35a0c233f2c2f19
+      CC BY-SA 4.0. This derived file is likewise licensed CC BY-SA 4.0.
+  models/car_hondae.glb    "FREE // Honda E (Detailed Interior) 2021" by Alex Murias
+      https://sketchfab.com/3d-models/free-honda-e-detailed-interior-2021-814cf3f8cfd64594b1c4f96e873c3cef
+      CC BY 4.0
+  models/car_prius.glb     "2016 Toyota Prius" by tonielpro520
+      https://sketchfab.com/3d-models/2016-toyota-prius-90e9f77205014ecc8e3e08dd27dc4d52
+      CC BY 4.0
+  models/car_fortuner.glb  "Toyota Fortuner 2021" by Asadawut.Kaewma
+      https://sketchfab.com/3d-models/toyota-fortuner-2021-a70b997f11b7482e9affbf318a508f85
+      CC BY 4.0
+
+Licence texts: https://creativecommons.org/licenses/by/4.0/ and
+https://creativecommons.org/licenses/by-sa/4.0/ . Vehicle names, designs and
+badges remain trademarks of their makers; this is an internal, non-commercial game.

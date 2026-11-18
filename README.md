@@ -100,7 +100,7 @@ own best is kept as a second ghost. `T` restarts a run. Leaderboard entries belo
 the browser, so a player keeps their entry across sessions on the same device; there are no accounts.
 
 **Vehicles and drivers.** Five vehicles with different top speed, acceleration, handling, drift and
-weight (GT, Motorbike, Hypercar, Bruiser, Drift Spec), and ten cosmetic driver looks. The vehicle is part
+weight (Concept GT, Motorbike, Concept Hypercar, Toyota Fortuner, Drift Spec, Toyota Corolla, Honda e, Toyota Prius), and ten cosmetic driver looks. The vehicle is part
 of the shared simulation; weight decides who gives way in a collision.
 
 **Drifting.** A drift follows an arc of fixed radius at any speed (19 m steering into it, 44 m with the
@@ -136,6 +136,14 @@ the interior and Khronos logos removed (`apps/web/public/world/models/car.glb`).
 colour under a clear coat; GT, Hypercar (wing, lowered), Bruiser (matte, larger) and Drift Spec (two-tone,
 wing) differ in finish. The Motorbike is built in code from smooth solids on the car's wheels, with a rider
 in leathers. Cars are closed, so the driver choice is not visible in them.
+
+**Everyday cars.** Toyota Corolla, Honda e, Toyota Prius and Toyota Fortuner are community models from
+Sketchfab under CC BY 4.0 (the Corolla CC BY-SA 4.0), each rebuilt into a ~25,000-triangle game model with
+the game's own paint, glass and wheels; authors and links are in `apps/web/public/world/CREDITS.txt`. They
+load in the background after the concept car, and a car is shown as the concept car until its own model
+arrives. Only models whose embedded licence could be read were used: several others (a Camry, RAV4,
+Vellfire, Supra, Tacoma, Accent) were rejected for a missing, non-commercial or doubtful licence. The eight
+vehicles are stat lines in `packages/shared/src/constants.ts`; `VEHICLE_CAR` in `models.ts` maps each to a model.
 
 ### Not built, or simplified
 

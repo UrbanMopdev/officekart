@@ -169,7 +169,7 @@ export function Lobby() {
               })}
             </div>
             <h3 className="mb-1.5 mt-4 text-xs font-black uppercase tracking-widest text-indigo-200">Vehicle</h3>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               {VEHICLES.map((v, i) => (
                 <button key={v.name} type="button" aria-pressed={me?.vehicle === i} onClick={() => pick({ vehicle: i })} className={`rounded-xl border-2 px-1 py-2 text-center text-xs font-black transition ${me?.vehicle === i ? "border-amber-400 bg-amber-400/15" : "border-white/10 bg-white/5 hover:border-white/40"}`}>
                   {v.name}

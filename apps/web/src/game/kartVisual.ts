@@ -3,7 +3,7 @@
  * kart; each kart only owns its paint materials, so twelve karts cost little.
  */
 import * as THREE from "three";
-import { carFinish, kitDriver, kitReady, kitVehicle, tintedMaterial, type KitVehicle } from "./models";
+import { carFinish, kitDriver, kitReady, kitVehicle, kitVersion, tintedMaterial, type KitVehicle } from "./models";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FLAG, FX, KART_COLORS } from "@office-kart/shared";
@@ -547,7 +547,7 @@ export class KartVisual {
   /** Swap the bodywork and the driver's look. Cheap to call every frame: it only acts on a change. */
   setStyle(vehicle: number, avatar: number): void {
     if (kitReady()) {
-      const key = `${vehicle}:${avatar}`;
+      const key = `${vehicle}:${avatar}:${kitVersion()}`;
       if (key !== this.kitKey) this.buildKit(vehicle, avatar, key);
       if (this.kit) return;
     }
@@ -725,7 +725,7 @@ export class KartVisual {
     }
     const shell = new THREE.Group();
     // Centre the wheelbase on the kart and set the ride height.
-    shell.position.set(0, t.ride, -0.09);
+    shell.position.set(0, t.ride, car.offsetZ);
     for (const part of car.body) shell.add(new THREE.Mesh(part.geo, part.finish === "paint1" ? paint : part.finish === "paint2" ? second : carFinish(part.finish)));
     if (t.wing) {
       const carbon = carFinish("paint2");
@@ -744,12 +744,26 @@ export class KartVisual {
         shell.add(plate);
       }
     }
+    if (car.lamps) {
+      // Lit lamps: a pair of white ones in the nose, red ones in the tail.
+      const lamp = new THREE.SphereGeometry(1, 10, 8);
+      for (const x of [-1, 1]) {
+        const head = new THREE.Mesh(lamp, carFinish("head"));
+        head.scale.set(0.13, 0.05, 0.03);
+        head.position.set(x * car.lamps.half * 0.66, car.top * 0.44, car.lamps.front - 0.1);
+        const tail = new THREE.Mesh(lamp, carFinish("tail"));
+        tail.scale.set(0.15, 0.045, 0.03);
+        tail.position.set(x * car.lamps.half * 0.68, car.top * 0.56, -car.rear + 0.05);
+        shell.add(head, tail);
+      }
+    }
     kit.add(shell);
     for (const w of car.wheels) {
       const pivot = new THREE.Group();
-      pivot.position.set(w.pos.x, w.pos.y, w.pos.z - 0.09);
+      pivot.position.set(w.pos.x, w.pos.y, w.pos.z + car.offsetZ);
       const spin = new THREE.Group();
       const side = new THREE.Group();
+      side.scale.set(car.wheelFit[0], car.wheelFit[1], car.wheelFit[1]);
       // The wheel is modelled for the left side; the right-hand ones are turned round.
       if (!w.left) side.rotation.y = Math.PI;
       for (const part of car.wheel) side.add(new THREE.Mesh(part.geo, carFinish(part.finish)));

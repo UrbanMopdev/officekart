@@ -35,7 +35,7 @@ export interface KitVehicle {
   bike?: boolean;
 }
 
-export type Finish = "paint1" | "paint2" | "glass" | "trim" | "head" | "tail" | "chrome" | "wheel_metal" | "wheel_dark" | "wheel_tire" | "leather";
+export type Finish = "paint1" | "paint2" | "glass" | "trim" | "head" | "tail" | "chrome" | "wheel_metal" | "wheel_dark" | "wheel_tire" | "leather" | "trimc";
 
 /** How one version of the car is finished. */
 export interface CarTrim {
@@ -57,8 +57,22 @@ export interface CarKit {
   /** Wheel centres in model units: x, y, z. */
   wheels: { pos: THREE.Vector3; front: boolean; left: boolean }[];
   wheelRadius: number;
+  /** How much the shared wheel model is scaled to fit this car: across, and in diameter. */
+  wheelFit: [number, number];
+  /** Shift along the car that centres the wheelbase on the kart. */
+  offsetZ: number;
+  /** Top of the bodywork and half its length, in model units. */
+  top: number;
+  rear: number;
+  /** Nose position and half width; set for cars that need lamps added (their own are plain plastic). */
+  lamps: { front: number; half: number } | null;
   trim: CarTrim;
 }
+
+/** Order matches VEHICLES: which model each vehicle uses. The motorbike (1) is built in code. */
+const VEHICLE_CAR: (string | null)[] = ["concept", null, "concept", "fortuner", "concept", "corolla", "hondae", "prius"];
+/** Everyday cars keep their factory trim: a plain glossy respray in the player's colour. */
+const STOCK: CarTrim = { scale: 0.86, metalness: 0.45, roughness: 0.3, clearcoat: 1, second: "carbon", wing: false, ride: 0 };
 
 /** Order matches VEHICLES; the motorbike (1) has no car trim. */
 const CAR_TRIMS: (CarTrim | null)[] = [
@@ -69,7 +83,10 @@ const CAR_TRIMS: (CarTrim | null)[] = [
   { scale: 0.86, metalness: 0.4, roughness: 0.3, clearcoat: 1, second: "light", wing: true, ride: -0.01 },
 ];
 
-let carBase: Omit<CarKit, "trim"> | null = null;
+const cars = new Map<string, Omit<CarKit, "trim">>();
+let carsLoaded = 0;
+/** Changes whenever another car model arrives, so karts on screen can swap to it. */
+export const kitVersion = (): number => carsLoaded;
 const finishes = new Map<Finish, THREE.Material>();
 
 /** Materials every car shares. Paint is per car and made by the kart itself. */
@@ -103,6 +120,9 @@ export function carFinish(finish: Finish): THREE.Material {
         break;
       case "leather":
         m = new THREE.MeshStandardMaterial({ color: "#15161a", metalness: 0, roughness: 0.5 });
+        break;
+      case "trimc":
+        m = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.25, roughness: 0.5 });
         break;
       default:
         m = new THREE.MeshStandardMaterial({ color: "#0b0b0d", metalness: 0.3, roughness: 0.62 });
@@ -138,17 +158,15 @@ let state: "idle" | "loading" | "ready" | "failed" = "idle";
 export const kitReady = (): boolean => state === "ready";
 
 export function kitVehicle(vehicle: number, avatar: number): KitVehicle | null {
-  const trim = CAR_TRIMS[vehicle];
-  if (carBase && vehicle === 1) {
-    const fallback = vehicles.get("kart:0");
-    if (fallback) return { ...fallback, wheels: [], scale: 1.12, seat: null, tail: [0.14, -1.05], labelY: 3.1, car: { ...carBase, trim: CAR_TRIMS[0]! }, bike: true };
-  }
-  if (carBase && trim) {
-    const fallback = vehicles.get("kart:0");
-    if (fallback) {
-      const len = 4.36 * trim.scale;
-      return { ...fallback, wheels: [], scale: trim.scale, seat: null, tail: [0.5 * trim.scale, -len * 0.46], labelY: 1.15 * trim.scale + 1.5, car: { ...carBase, trim } };
-    }
+  const fallback = vehicles.get("kart:0");
+  const concept = cars.get("concept");
+  if (fallback && concept && vehicle === 1) return { ...fallback, wheels: [], scale: 1.12, seat: null, tail: [0.14, -1.05], labelY: 3.1, car: { ...concept, trim: CAR_TRIMS[0]! }, bike: true };
+  const which = VEHICLE_CAR[vehicle];
+  // Until a car's own model has arrived it is shown as the concept car.
+  const base = which ? (cars.get(which) ?? concept) : undefined;
+  if (fallback && base) {
+    const trim = base === concept ? (CAR_TRIMS[vehicle] ?? CAR_TRIMS[0]!) : STOCK;
+    return { ...fallback, wheels: [], scale: trim.scale, seat: null, tail: [0.5 * trim.scale, -base.rear * trim.scale], labelY: base.top * trim.scale + 1.5, car: { ...base, trim } };
   }
   const key = vehicle === 0 ? `kart:${avatar % DRIVER_FILES.length}` : `v:${vehicle}`;
   return vehicles.get(key) ?? null;
@@ -271,22 +289,30 @@ async function loadFile(loader: GLTFLoader, dir: string, file: string): Promise<
   return { body: merge(body), wheels, driver, driverAt, material };
 }
 
-/** The realistic car (Khronos "Car Concept", CC BY 4.0), rebuilt as a light game model by tools outside the repo. */
-async function loadCar(loader: GLTFLoader): Promise<Omit<CarKit, "trim">> {
-  const gltf = await loader.loadAsync("/world/models/car.glb");
+/**
+ * A car rebuilt as a light game model by tools outside the repo: bodywork grouped by finish, plus
+ * where its wheels go. The concept car brings its own wheel; the others borrow it, scaled to fit.
+ */
+async function loadCar(loader: GLTFLoader, file: string, concept: Omit<CarKit, "trim"> | null): Promise<Omit<CarKit, "trim">> {
+  const gltf = await loader.loadAsync(`/world/models/${file}.glb`);
   const body: CarKit["body"] = [];
   const wheel: CarKit["wheel"] = [];
   gltf.scene.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
     const name = (o.name || o.parent?.name || "") as Finish;
-    (name.startsWith("wheel") ? wheel : body).push({ geo: m.geometry, finish: name });
+    if (name.startsWith("wheel")) wheel.push({ geo: m.geometry, finish: name });
+    else body.push({ geo: m.geometry, finish: m.geometry.getAttribute("color") ? "trimc" : name });
   });
-  const extras = (gltf.asset as { extras?: { wheels?: Record<string, { c: number[]; size: number[] }> } }).extras;
+  const extras = (gltf.asset as { extras?: { wheels?: Record<string, { c: number[]; size?: number[] }>; wheelRadius?: number; wheelWidth?: number; body?: { min: number[]; max: number[] } } }).extras;
   const w = extras?.wheels;
-  if (!w || body.length === 0 || wheel.length === 0) throw new Error("car.glb is missing parts");
-  const wheels = Object.entries(w).map(([name, v]) => ({ pos: new THREE.Vector3(v.c[0], v.c[1], v.c[2]), front: name.includes("Front"), left: v.c[0] > 0 }));
-  return { body, wheel, wheels, wheelRadius: w.WheelRearL.size[1] / 2 };
+  if (!w || body.length === 0 || (!concept && wheel.length === 0)) throw new Error(`${file}.glb is missing parts`);
+  const wheels = Object.entries(w).map(([name, v]) => ({ pos: new THREE.Vector3(v.c[0], v.c[1], v.c[2]), front: name.startsWith("F") || name.includes("Front"), left: v.c[0] > 0 }));
+  const top = extras?.body?.max[1] ?? 1.2;
+  const rear = Math.abs(extras?.body?.min[2] ?? 2);
+  if (!concept) return { body, wheel, wheels, wheelRadius: w.WheelRearL.size![1] / 2, wheelFit: [1, 1], offsetZ: -0.09, top, rear, lamps: null };
+  const radius = extras?.wheelRadius ?? 0.33;
+  return { body, wheel: concept.wheel, wheels, wheelRadius: radius, wheelFit: [Math.min(1.05, (extras?.wheelWidth ?? 0.25) / 0.284), radius / concept.wheelRadius], offsetZ: 0, top, rear, lamps: { front: extras?.body?.max[2] ?? 2, half: extras?.body?.max[0] ?? 0.9 } };
 }
 
 /** Start loading. Safe to call more than once; the game draws its built-in karts until this finishes (or if it fails). */
@@ -317,12 +343,25 @@ export function loadKit(): void {
         }),
       );
       try {
-        carBase = await loadCar(loader);
+        cars.set("concept", await loadCar(loader, "car", null));
+        carsLoaded++;
       } catch (err) {
         console.warn("The car model could not be loaded; using the kit vehicles.", err);
       }
       state = drivers.length === DRIVER_FILES.length ? "ready" : "failed";
       console.info(`Vehicle models: ${state} (${vehicles.size} vehicles, ${drivers.filter(Boolean).length} drivers)`);
+      // Everyday cars follow in the background; each appears as soon as it is in.
+      const concept = cars.get("concept");
+      for (const name of new Set(VEHICLE_CAR)) {
+        if (!name || name === "concept" || !concept) continue;
+        try {
+          cars.set(name, await loadCar(loader, `car_${name}`, concept));
+          carsLoaded++;
+        } catch (err) {
+          console.warn(`Car model ${name} could not be loaded.`, err);
+        }
+      }
+      console.info(`Car models: ${cars.size}`);
     } catch (err) {
       console.warn("Vehicle models could not be loaded; using the built-in karts.", err);
       state = "failed";
