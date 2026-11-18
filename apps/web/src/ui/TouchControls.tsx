@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, type PointerEvent, type ReactNode } from "react";
 import { ITEMS } from "@office-kart/shared";
-import { touch } from "../game/input";
+import { tapDrift, tapUse, touch } from "../game/input";
 import { useStore } from "../store";
 
 /** How far the thumb slides for full lock, in CSS pixels. */
@@ -107,7 +107,10 @@ export function TouchControls({ item, charges, drift, level }: { item: number; c
           </HoldButton>
         </div>
         <div className="flex flex-col items-center gap-3">
-          <HoldButton label={item ? `Use ${it.name}` : "No power-up"} onChange={(d) => (touch.use = d)} className={`relative h-16 w-16 text-3xl ${item ? "animate-pop border-amber-300 bg-slate-900/70" : "border-white/25 bg-slate-900/35"}`}>
+          <HoldButton label={item ? `Use ${it.name}` : "No power-up"} onChange={(d) => {
+              touch.use = d;
+              if (d) tapUse();
+            }} className={`relative h-16 w-16 text-3xl ${item ? "animate-pop border-amber-300 bg-slate-900/70" : "border-white/25 bg-slate-900/35"}`}>
             {it?.icon}
             {charges > 1 && <span className="absolute -right-1 -top-1 rounded-full bg-amber-400 px-1.5 text-xs text-slate-900">{charges}</span>}
           </HoldButton>
@@ -118,7 +121,10 @@ export function TouchControls({ item, charges, drift, level }: { item: number; c
           )}
         </div>
         <div className="relative">
-          <HoldButton label="Drift" onChange={(d) => (touch.drift = d)} className={`h-24 w-24 bg-indigo-600/60 text-sm ${LEVEL_RING[level]}`}>
+          <HoldButton label="Drift" onChange={(d) => {
+              touch.drift = d;
+              if (d) tapDrift();
+            }} className={`h-24 w-24 bg-indigo-600/60 text-sm ${LEVEL_RING[level]}`}>
             DRIFT
           </HoldButton>
           {/* Drift charge fills up the edge of the button. */}

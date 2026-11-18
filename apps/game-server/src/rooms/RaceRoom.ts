@@ -22,6 +22,7 @@ import {
   collideKarts,
   createKartState,
   decodeInput,
+  INPUT_MASK,
   driftLevel,
   getTrack,
   packKartState,
@@ -508,7 +509,7 @@ export class RaceRoom extends Room<RaceState> {
     if (!Array.isArray(payload) || payload.length !== 3) return;
     const [seq, bits, steer] = payload as unknown[];
     if (typeof seq !== "number" || !Number.isInteger(seq)) return;
-    if (typeof bits !== "number" || !Number.isInteger(bits) || bits < 0 || bits > 15) return;
+    if (typeof bits !== "number" || !Number.isInteger(bits) || bits < 0 || (bits & ~INPUT_MASK) !== 0) return;
     if (typeof steer !== "number" || !Number.isFinite(steer)) return;
     // Sequence numbers must move forward, and not by an absurd amount.
     if (seq <= racer.lastQueuedSeq || seq > racer.lastQueuedSeq + 600) return;

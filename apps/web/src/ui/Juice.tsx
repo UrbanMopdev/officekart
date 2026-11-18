@@ -3,7 +3,7 @@
  * lines, and short call-outs for things the player just pulled off.
  */
 import { useEffect, useRef, useState } from "react";
-import { KART, driftLevel } from "@office-kart/shared";
+import { ITEMS, KART, driftLevel } from "@office-kart/shared";
 import { audio } from "../audio";
 import { feel } from "../game/shared";
 import { net } from "../net/connection";
@@ -91,6 +91,7 @@ export function Callouts() {
       if (!mine) return;
       if (fx.kind === "rocket") say.current(fx.item === 2 ? "PERFECT START!" : "ROCKET START!", "gold");
       if (fx.kind === "draft") say.current("SLIPSTREAM!", "cyan");
+      if (fx.kind === "item" && fx.item && ITEMS[fx.item]) say.current(`${ITEMS[fx.item].icon} ${ITEMS[fx.item].name}!`, "white");
     };
     net.fxListeners.add(onFx);
     return () => void net.fxListeners.delete(onFx);

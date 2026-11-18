@@ -157,7 +157,7 @@ function ItemSlot({ item, charges }: { item: number; charges: number }) {
       </div>
       {item > 0 && (
         <div className="text-outline mt-1 text-xs font-black">
-          {it.name} <span className="font-bold text-white/70">· Shift</span>
+          {it.name} <span className="font-bold text-white/70">· Shift or E</span>
         </div>
       )}
     </div>

@@ -24,10 +24,22 @@ export const touch = {
   autoGas: false,
 };
 let resetQueued = false;
+/** Quick taps are remembered until the next tick, so a short press is never missed. */
+let useQueued = false;
+let driftQueued = false;
+const USE_KEYS = new Set(["ShiftLeft", "ShiftRight", "KeyE", "KeyF", "Enter"]);
+
+/** For the on-screen buttons: register a tap of the power-up or drift button. */
+export function tapUse(): void {
+  if (enabled) useQueued = true;
+}
+export function tapDrift(): void {
+  if (enabled) driftQueued = true;
+}
 let steer = 0;
 let enabled = false;
 
-const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyR", "ShiftLeft", "ShiftRight", "KeyE"]);
+const GAME_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyR", "ShiftLeft", "ShiftRight", "KeyE", "KeyF", "Enter"]);
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
@@ -39,6 +51,8 @@ window.addEventListener("keydown", (e) => {
   if (!enabled) return;
   if (GAME_KEYS.has(e.code)) e.preventDefault();
   if (e.code === "KeyR" && !e.repeat) resetQueued = true;
+  if (USE_KEYS.has(e.code) && !e.repeat) useQueued = true;
+  if (e.code === "Space" && !e.repeat) driftQueued = true;
   down.add(e.code);
 });
 window.addEventListener("keyup", (e) => {
@@ -57,6 +71,8 @@ export function setInputEnabled(on: boolean): void {
   if (!on) {
     down.clear();
     resetQueued = false;
+    useQueued = false;
+    driftQueued = false;
     steer = 0;
   }
 }
@@ -66,13 +82,15 @@ export function sampleInput(): [number, number] {
   let bits = 0;
   if (down.has("KeyW") || down.has("ArrowUp") || touch.gas || (touch.autoGas && !touch.brake)) bits |= INPUT_BITS.ACCEL;
   if (down.has("KeyS") || down.has("ArrowDown") || touch.brake) bits |= INPUT_BITS.BRAKE;
-  if (down.has("Space") || touch.drift) bits |= INPUT_BITS.DRIFT;
-  if (touch.use) bits |= INPUT_BITS.USE;
+  if (down.has("Space") || touch.drift || driftQueued) bits |= INPUT_BITS.DRIFT;
+  if (touch.use || useQueued) bits |= INPUT_BITS.USE;
+  useQueued = false;
+  driftQueued = false;
   if (touch.reset) {
     resetQueued = true;
     touch.reset = false;
   }
-  if (down.has("ShiftLeft") || down.has("ShiftRight") || down.has("KeyE")) bits |= INPUT_BITS.USE;
+  for (const code of USE_KEYS) if (down.has(code)) bits |= INPUT_BITS.USE;
   if (resetQueued) {
     bits |= INPUT_BITS.RESET;
     resetQueued = false;

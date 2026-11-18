@@ -44,6 +44,8 @@ export interface PlayerSnapshot {
   finished: boolean;
   finishMs: number;
   bestLapMs: number;
+  /** Power-up being held (0 = none). */
+  item: number;
 }
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -114,7 +116,7 @@ export class Bot {
   get players(): PlayerSnapshot[] {
     const out: PlayerSnapshot[] = [];
     this.room.state?.players?.forEach((p: PlayerSnapshot) => {
-      out.push({ id: p.id, name: p.name, slot: p.slot, ready: p.ready, connected: p.connected, racing: p.racing, lap: p.lap, place: p.place, finished: p.finished, finishMs: p.finishMs, bestLapMs: p.bestLapMs });
+      out.push({ id: p.id, name: p.name, slot: p.slot, ready: p.ready, connected: p.connected, racing: p.racing, lap: p.lap, place: p.place, finished: p.finished, finishMs: p.finishMs, bestLapMs: p.bestLapMs, item: p.item ?? 0 });
     });
     return out;
   }

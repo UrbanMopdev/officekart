@@ -35,7 +35,11 @@ export interface ItemRacer {
   stats: { itemHits: number };
 }
 
+/** Power-ups that do something even with nobody else on the track. */
+const SOLO_ITEMS = [1, 1, 7, 7, 10, 5, 8, 12, 12, 14, 15, 16, 19, 19];
+
 export function rollItem(place: number, racers: number): number {
+  if (racers <= 1) return SOLO_ITEMS[Math.floor(Math.random() * SOLO_ITEMS.length)];
   const f = racers > 1 ? (place - 1) / (racers - 1) : 0.5;
   const col = f < 0.34 ? 0 : f < 0.67 ? 1 : 2;
   let total = 0;

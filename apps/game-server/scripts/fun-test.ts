@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   const server = await getServer(2597);
   const a = new Bot(server.url, { name: "Rocket", lane: 0 });
   const b = new Bot(server.url, { name: "Early", lane: 0 });
-  const c = new Bot(server.url, { name: "Plain", lane: 0 });
+  const c = new Bot(server.url, { name: "Plain", lane: 0, items: true });
   const fx: { kind: string; slot?: number; item?: number }[] = [];
   try {
     const code = await a.create();
@@ -96,7 +96,18 @@ async function main(): Promise<void> {
     await sleep(1300);
     const rockets = fx.filter((m) => m.kind === "rocket");
     check("pressing the accelerator just before the lights gives a rocket start", rockets.length === 1 && rockets[0].slot === a.me?.slot && rockets[0].item === 2, JSON.stringify(rockets));
+    // Power-ups: the bot presses "use" now and then; holding one and then not holding it means it was used.
+    let held = 0;
+    let uses = 0;
+    const watch = setInterval(() => {
+      const item = c.me?.item ?? 0;
+      if (held !== 0 && item === 0) uses++;
+      held = item;
+    }, 30);
     await sleep(25_000);
+    clearInterval(watch);
+    check("a power-up is used when the use button is pressed", uses >= 1 && fx.some((m) => m.kind === "item" && m.slot === c.me?.slot), `${uses} uses by the bot that presses the button`);
+    check("racers who never press it keep their power-ups", fx.every((m) => m.kind !== "item" || m.slot === c.me?.slot));
     const drafts = fx.filter((m) => m.kind === "draft");
     check("following closely behind another kart earns a slipstream boost", drafts.length >= 1, `${drafts.length} slipstream boosts in 26 s`);
     check("the kart in front does not get one for free", new Set(drafts.map((d) => d.slot)).size < 3 || drafts.length >= 3, `${drafts.length}`);

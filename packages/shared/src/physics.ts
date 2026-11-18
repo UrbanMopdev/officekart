@@ -94,6 +94,9 @@ export const INPUT_BITS = { ACCEL: 1, BRAKE: 2, DRIFT: 4, RESET: 8, USE: 16 } as
 
 export const NEUTRAL_INPUT: KartInput = { throttle: 0, steer: 0, drift: false, reset: false, use: false };
 
+/** Every input bit that exists; anything outside it is not a valid input. */
+export const INPUT_MASK = INPUT_BITS.ACCEL | INPUT_BITS.BRAKE | INPUT_BITS.DRIFT | INPUT_BITS.RESET | INPUT_BITS.USE;
+
 export function decodeInput(bits: number, steer: number, out: KartInput): KartInput {
   const accel = (bits & INPUT_BITS.ACCEL) !== 0;
   const brake = (bits & INPUT_BITS.BRAKE) !== 0;
