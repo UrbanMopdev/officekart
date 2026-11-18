@@ -347,7 +347,9 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   if (s.driftDir !== 0) {
     const into = steer * s.driftDir; // 1 = steering into the drift, -1 = counter-steering
     // Steering into the slide pulls it tight; steering against it runs it wide. Both keep the drift alive.
-    turn = s.driftDir * KART.driftTurn * Math.sqrt(V.drift) * Math.max(0.14, 0.55 + 0.6 * into);
+    const [wide, mid, tight] = KART.driftRadius;
+    const curve = into >= 0 ? 1 / mid + (Math.sqrt(V.drift) / tight - 1 / mid) * into : 1 / mid + (1 / mid - 1 / wide) * into;
+    turn = s.driftDir * Math.max(absSpeed, KART.driftMinSpeed) * curve;
     if (grounded) s.driftCharge += dt * (0.7 + 0.6 * Math.max(0, into)) * V.drift;
     grip = KART.driftGrip * Math.max(0.35, gripMul);
   } else {

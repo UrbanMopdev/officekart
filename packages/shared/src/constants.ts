@@ -59,7 +59,11 @@ export const KART = {
   turnSpeedDamp: 0.38,
   grip: 9,
   driftGrip: 3.1,
-  driftTurn: 2.3,
+  /**
+   * A drift follows an arc of a set radius whatever the speed, so it corners the same in every
+   * speed class. Metres: steering fully against the slide, stick centred, steering fully into it.
+   */
+  driftRadius: [120, 44, 19],
   driftMinSpeed: 11,
   /** Radians the tail steps out the instant a drift starts. */
   driftKick: 0.11,

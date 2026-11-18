@@ -30,6 +30,8 @@ export interface BotOptions {
   items?: boolean;
   /** If false the bot joins but never drives. */
   drive?: boolean;
+  /** Extra options sent when creating or joining (vehicle, pid, trial...). */
+  join?: Record<string, unknown>;
 }
 
 export interface PlayerSnapshot {
@@ -80,12 +82,12 @@ export class Bot {
   }
 
   async create(): Promise<string> {
-    this.bind(await this.client.create(ROOM_NAME, { name: this.opts.name }));
+    this.bind(await this.client.create(ROOM_NAME, { name: this.opts.name, ...this.opts.join }));
     return this.room.roomId;
   }
 
   async join(code: string): Promise<void> {
-    this.bind(await this.client.joinById(code, { name: this.opts.name }));
+    this.bind(await this.client.joinById(code, { name: this.opts.name, ...this.opts.join }));
   }
 
   /** Simulate a dropped connection (no goodbye sent). */
