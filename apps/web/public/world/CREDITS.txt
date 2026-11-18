@@ -41,6 +41,19 @@ Sketchfab under a Creative Commons licence:
       https://sketchfab.com/3d-models/toyota-fortuner-2021-a70b997f11b7482e9affbf318a508f85
       CC BY 4.0
 
+  models/car_golf.glb      "Volkswagen Golf II" by ARDmation
+      https://sketchfab.com/3d-models/volkswagen-golf-ii-740500f10bc94e7a91c2290e445fcb39
+      CC BY 4.0
+  models/car_delorean.glb  "DeLorean DMC-12" by JandroS
+      https://sketchfab.com/3d-models/delorean-dmc-12-7001f739fe594314b5a3081163577139
+      CC BY 4.0
+  models/car_datsun.glb    "[FREE] Datsun 280Z" by Martin Trafas
+      https://sketchfab.com/3d-models/free-datsun-280z-0789ab2ece9442de94b3c41595e0ecbd
+      CC BY 4.0
+  models/car_cadillac.glb  "Cadillac coupe Deville" by its.anjaney
+      https://sketchfab.com/3d-models/cadillac-coupe-deville-2adc47898c3145078f0b3bc51995cfe9
+      CC BY 4.0
+
 Licence texts: https://creativecommons.org/licenses/by/4.0/ and
 https://creativecommons.org/licenses/by-sa/4.0/ . Vehicle names, designs and
 badges remain trademarks of their makers; this is an internal, non-commercial game.

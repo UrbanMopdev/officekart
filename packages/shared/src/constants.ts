@@ -92,6 +92,10 @@ export const VEHICLES = [
   { name: "Toyota Corolla", tag: "The everyday hero. Eager, tidy and hard to upset.", speed: 0.995, accel: 1.07, turn: 1.04, drift: 1.02, weight: 1 },
   { name: "Honda e", tag: "Tiny electric. Instant shove and turns on a coin, but gets pushed around.", speed: 0.972, accel: 1.26, turn: 1.13, drift: 1.08, weight: 0.75 },
   { name: "Toyota Prius", tag: "Slippery shape. Slow to wind up, then quietly quick.", speed: 1.025, accel: 0.9, turn: 0.97, drift: 0.96, weight: 1.1 },
+  { name: "VW Golf II", tag: "Boxy eighties hatch. Light, eager and loves a slide.", speed: 0.985, accel: 1.12, turn: 1.1, drift: 1.12, weight: 0.85 },
+  { name: "DeLorean DMC-12", tag: "Stainless-steel legend. Takes a while to reach 88, then flies.", speed: 1.035, accel: 0.86, turn: 0.93, drift: 1, weight: 1.1 },
+  { name: "Datsun 280Z", tag: "Seventies sports coupé. Balanced and tail-happy.", speed: 1.01, accel: 1, turn: 1.02, drift: 1.22, weight: 0.92 },
+  { name: "Cadillac DeVille", tag: "Land yacht. Enormous and unstoppable; corners like a sofa.", speed: 1.02, accel: 0.88, turn: 0.88, drift: 0.9, weight: 1.65 },
 ] as const;
 
 /** Driver looks. Purely cosmetic. */

@@ -23,14 +23,19 @@ export interface Settings {
   reducedFx: boolean;
   /** Touch controls: accelerate automatically. */
   autoGas: boolean;
+  /** Camera: behind the car, or from the driver's seat over the bonnet. */
+  view: "chase" | "bonnet";
 }
 
 const SETTINGS_KEY = "office-kart:settings";
-const DEFAULT_SETTINGS: Settings = { master: 0.8, music: 0.6, sfx: 0.9, shake: true, reducedFx: false, autoGas: true };
+const DEFAULT_SETTINGS: Settings = { master: 0.8, music: 0.6, sfx: 0.9, shake: true, reducedFx: false, autoGas: true, view: "chase" };
 
 function loadSettings(): Settings {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") };
+    const saved = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") } as Settings;
+    // ?view=bonnet opens straight in the driver's seat (used for previews).
+    if (new URLSearchParams(location.search).get("view") === "bonnet") saved.view = "bonnet";
+    return saved;
   } catch {
     return DEFAULT_SETTINGS;
   }

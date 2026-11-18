@@ -70,9 +70,16 @@ export interface CarKit {
 }
 
 /** Order matches VEHICLES: which model each vehicle uses. The motorbike (1) is built in code. */
-const VEHICLE_CAR: (string | null)[] = ["concept", null, "concept", "fortuner", "concept", "corolla", "hondae", "prius"];
+const VEHICLE_CAR: (string | null)[] = ["concept", null, "concept", "fortuner", "concept", "corolla", "hondae", "prius", "golf", "delorean", "datsun", "cadillac"];
 /** Everyday cars keep their factory trim: a plain glossy respray in the player's colour. */
 const STOCK: CarTrim = { scale: 0.86, metalness: 0.45, roughness: 0.3, clearcoat: 1, second: "carbon", wing: false, ride: 0 };
+/** A few cars are known for their finish: brushed stainless steel, or deep seventies lacquer. */
+const FINISH: Record<string, Partial<CarTrim>> = {
+  delorean: { metalness: 0.95, roughness: 0.36, clearcoat: 0 },
+  datsun: { metalness: 0.2, roughness: 0.22 },
+  cadillac: { metalness: 0.6, roughness: 0.24, scale: 0.84 },
+  golf: { metalness: 0.15, roughness: 0.35 },
+};
 
 /** Order matches VEHICLES; the motorbike (1) has no car trim. */
 const CAR_TRIMS: (CarTrim | null)[] = [
@@ -165,7 +172,7 @@ export function kitVehicle(vehicle: number, avatar: number): KitVehicle | null {
   // Until a car's own model has arrived it is shown as the concept car.
   const base = which ? (cars.get(which) ?? concept) : undefined;
   if (fallback && base) {
-    const trim = base === concept ? (CAR_TRIMS[vehicle] ?? CAR_TRIMS[0]!) : STOCK;
+    const trim = base === concept ? (CAR_TRIMS[vehicle] ?? CAR_TRIMS[0]!) : { ...STOCK, ...(FINISH[which ?? ""] ?? {}) };
     return { ...fallback, wheels: [], scale: trim.scale, seat: null, tail: [0.5 * trim.scale, -base.rear * trim.scale], labelY: base.top * trim.scale + 1.5, car: { ...base, trim } };
   }
   const key = vehicle === 0 ? `kart:${avatar % DRIVER_FILES.length}` : `v:${vehicle}`;

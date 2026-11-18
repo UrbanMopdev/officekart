@@ -394,6 +394,27 @@ export class KartVisual {
   private kitHelmet: THREE.Color | null = null;
   private kitMats: THREE.MeshStandardMaterial[] = [];
   /** Second colour on two-tone cars: the player colour, lightened. */
+  /** Where the driver's eyes are, for the first-person view: height and distance ahead of centre. */
+  eye: [number, number] = [1.5, 0];
+  private firstPerson = false;
+
+  /** From the driver's seat the car's own glass is taken out, so the view through the screen is clear. */
+  setFirstPerson(on: boolean): void {
+    if (on === this.firstPerson && this.kitGlassFor === this.kit) return;
+    this.firstPerson = on;
+    this.kitGlassFor = this.kit;
+    // Paint is drawn on both faces from inside, so the bonnet and pillars are solid whichever way they were modelled.
+    for (const m of this.kitMats) {
+      m.side = on ? THREE.DoubleSide : THREE.FrontSide;
+      m.needsUpdate = true;
+    }
+    const glass = carFinish("glass");
+    this.kit?.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh && (mesh.material === glass || mesh.userData.solid === glass)) mesh.visible = !on;
+    });
+  }
+  private kitGlassFor: THREE.Group | null = null;
   private kitSecond: THREE.Color | null = null;
   private kitCar = false;
   private shadowsOn = true;
@@ -600,6 +621,7 @@ export class KartVisual {
     this.kitCar = !!v.car;
     if (v.bike) this.buildBike(kit, v);
     else if (v.car) this.buildCar(kit, v);
+    this.eye = v.bike ? [1.58 * v.scale, 0.3] : v.car ? (v.car.lamps ? [(v.car.top * 0.81 + v.car.trim.ride) * v.scale, -0.12 * v.scale] : [(1.03 + v.car.trim.ride) * v.scale, 0.95 * v.scale]) : [1.9, 0.2];
     const { material, tint } = v.car ? { material: null, tint: this.kitTint! } : tintedMaterial(v.material, v.paint);
     this.kitTint = tint;
     if (material) {

@@ -177,6 +177,16 @@ export function Hud() {
   const ghostMs = useStore((s) => s.ghostMs);
   const champion = useStore((s) => s.champion);
   const trial = room.trial;
+  // C switches between the chase camera and the driver's seat.
+  const view = useStore((s) => s.settings.view);
+  const setSettings = useStore((s) => s.setSettings);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyC" && !e.repeat) setSettings({ view: useStore.getState().settings.view === "bonnet" ? "chase" : "bonnet" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setSettings]);
   // Time trial: T throws the run away and lines up again.
   useEffect(() => {
     if (!trial) return;
@@ -248,6 +258,10 @@ export function Hud() {
       {/* Standings */}
       <div className="absolute right-4 top-4 flex w-36 flex-col items-end gap-1 tall:w-52 tall:gap-2" style={{ right: "max(1rem, env(safe-area-inset-right))" }}>
         <PingBadge />
+        <button type="button" onClick={() => setSettings({ view: view === "bonnet" ? "chase" : "bonnet" })} className="pointer-events-auto rounded-full bg-slate-900/70 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800">
+          {view === "bonnet" ? "Chase view" : "Driver view"}
+          {compact ? "" : " (C)"}
+        </button>
         {trial && !me?.finished && (
           <button type="button" onClick={() => net.send(MSG.RESTART)} className="pointer-events-auto rounded-full bg-slate-900/70 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800">
             ↺ Restart run{compact ? "" : " (T)"}

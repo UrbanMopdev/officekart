@@ -86,7 +86,7 @@ export function World({ quality }: { quality: Quality }) {
   const fillB = useRef<THREE.PointLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
   const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean ; champ: Ghost | null; champVisual: KartVisual | null; champLook: { name: string; color: number; vehicle: number; avatar: number } | null }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, champ: null, champVisual: null, champLook: null });
-  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0 });
+  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eye: [1.5, 0] as [number, number], lastY: 0, tip: 0 });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
   const fogHome = useRef<{ color: THREE.Color; near: number; far: number } | null>(null);
@@ -288,6 +288,8 @@ export function World({ quality }: { quality: Quality }) {
       const camDist2 = cdx * cdx + cdz * cdz;
       v.setIdentity(p.name, p.color, !mine && camDist2 > 110);
       v.setStyle(p.vehicle, p.avatar);
+      if (mine) cam.current.eye = v.eye;
+      v.setFirstPerson(mine && store.settings.view === "bonnet");
       // Tilt the kart to the road under it: slope ahead gives pitch, banking gives roll.
       locate(track, sample.x, sample.z, v.hint, loc);
       v.hint = loc.idx;
@@ -534,9 +536,24 @@ export function World({ quality }: { quality: Quality }) {
       const jy = Math.sin(time * 47 + 1.3) * 0.03 * c.shake + Math.sin(time * 38) * 0.45 * c.jolt;
       // The camera sits closer and lower the faster the kart goes, and the view widens: both read as speed.
       const back = 8.8 - c.shake * 1.1 - Math.max(0, pace - 0.5) * 1.4 + c.air * 2.6;
-      camera.position.set(focus.x - fx * back + fz * jx, c.y + 4.1 + jy + c.air * 1.4, focus.z - fz * back - fx * jx);
-      camera.lookAt(focus.x + fx * 6, focus.y + 1.6, focus.z + fz * 6);
-      fov = Math.min(94, 58 + pace * 15 + c.shake * 9 + (net.predictor.ctx.speed - 1) * 9);
+      if (settings.view === "bonnet") {
+        // First person: the driver's eyes, looking down the bonnet. The view turns with the car itself
+        // and tips with the road, so the nose stays put and the world moves.
+        const hx = Math.sin(focus.heading);
+        const hz = Math.cos(focus.heading);
+        const [eyeY, eyeZ] = c.eye;
+        const rise = Math.max(-0.35, Math.min(0.35, (focus.y - c.lastY) / Math.max(0.5, Math.abs(focus.speed) * dt + 1e-3)));
+        c.tip += ((Number.isFinite(rise) ? rise : 0) - c.tip) * (1 - Math.exp(-dt * 6));
+        c.lastY = focus.y;
+        const ey = focus.y + eyeY + jy * 0.4;
+        camera.position.set(focus.x + hx * eyeZ, ey, focus.z + hz * eyeZ);
+        camera.lookAt(focus.x + hx * (eyeZ + 12), ey - 0.9 + c.tip * 12, focus.z + hz * (eyeZ + 12));
+        fov = Math.min(100, 72 + pace * 12 + c.shake * 8);
+      } else {
+        camera.position.set(focus.x - fx * back + fz * jx, c.y + 4.1 + jy + c.air * 1.4, focus.z - fz * back - fx * jx);
+        camera.lookAt(focus.x + fx * 6, focus.y + 1.6, focus.z + fz * 6);
+        fov = Math.min(94, 58 + pace * 15 + c.shake * 9 + (net.predictor.ctx.speed - 1) * 9);
+      }
       lookX = focus.x + fx * 20;
       lookZ = focus.z + fz * 20;
     } else {

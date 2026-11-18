@@ -100,7 +100,7 @@ own best is kept as a second ghost. `T` restarts a run. Leaderboard entries belo
 the browser, so a player keeps their entry across sessions on the same device; there are no accounts.
 
 **Vehicles and drivers.** Five vehicles with different top speed, acceleration, handling, drift and
-weight (Concept GT, Motorbike, Concept Hypercar, Toyota Fortuner, Drift Spec, Toyota Corolla, Honda e, Toyota Prius), and ten cosmetic driver looks. The vehicle is part
+weight (twelve vehicles: two concept cars, a drift car, a motorbike and eight real cars), and ten cosmetic driver looks. The vehicle is part
 of the shared simulation; weight decides who gives way in a collision.
 
 **Drifting.** A drift follows an arc of fixed radius at any speed (19 m steering into it, 44 m with the
@@ -136,6 +136,14 @@ the interior and Khronos logos removed (`apps/web/public/world/models/car.glb`).
 colour under a clear coat; GT, Hypercar (wing, lowered), Bruiser (matte, larger) and Drift Spec (two-tone,
 wing) differ in finish. The Motorbike is built in code from smooth solids on the car's wheels, with a rider
 in leathers. Cars are closed, so the driver choice is not visible in them.
+
+**Views.** C (or the button under the ping badge) switches between the chase camera and the driver's
+seat. In first person the car's own glass is hidden and its paint is drawn on both faces; cars that came
+with an interior show a dashboard and pillars, the concept car uses a bonnet camera. The choice is saved
+with the other settings.
+
+**Classics.** VW Golf II, DeLorean DMC-12 (brushed steel, tinted in the player's colour), Datsun 280Z and
+Cadillac Coupe DeVille, all CC BY 4.0, bring the garage to twelve vehicles.
 
 **Everyday cars.** Toyota Corolla, Honda e, Toyota Prius and Toyota Fortuner are community models from
 Sketchfab under CC BY 4.0 (the Corolla CC BY-SA 4.0), each rebuilt into a ~25,000-triangle game model with
