@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { scannedModel } from "./assets";
+import { groundMaterial, roadMaterial, snowCap } from "./materials";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Track, TrackTheme } from "@office-kart/shared";
 import { net } from "../net/connection";
@@ -29,6 +31,15 @@ interface Palette {
   banner: [string, string, string];
 }
 
+/** Asphalt differs by place: sun-bleached, frost-pale, ash-dark. */
+const ROAD_TINT: Record<string, string> = { frozen: "#e4e6ea", volcano: "#c4bcb8", neon: "#b9c0d2", office: "#d2d2d2" };
+
+/** Themes with a photographic landscape get matching verges and scanned concrete barriers. */
+const VERGE: Record<string, { texture: string; size: number; tint: string; roughness: number; snow?: number; barrierTint?: string }> = {
+  frozen: { texture: "snow", size: 7, tint: "#e9eef4", roughness: 0.8, snow: 1 },
+  volcano: { texture: "ash", size: 9, tint: "#d6cec8", roughness: 0.97, barrierTint: "#cfc4be" },
+};
+
 /** Per-theme tweaks on top of the default outdoor palette. */
 const TINTS: Record<string, Partial<Palette>> = {
   sky: {
@@ -44,8 +55,8 @@ const TINTS: Record<string, Partial<Palette>> = {
     gantry: "#0369a1",
     banner: ["#0369a1", "#f8fafc", "#67e8f9"],
   },
-  volcano: { turf: ["#3a2a26", "#30221f"], kerb: ["#f97316", "#1c1917"], barrier: ["#1c1917", "#f97316"], gantry: "#7c2d12", banner: ["#7c2d12", "#fed7aa", "#f97316"] },
-  frozen: { turf: ["#e8f0f8", "#dbe6f2"], kerb: ["#0ea5e9", "#f8fafc"], barrier: ["#f8fafc", "#38bdf8"], gantry: "#0c4a6e", banner: ["#0c4a6e", "#f8fafc", "#7dd3fc"] },
+  volcano: { turf: ["#3a2a26", "#30221f"], kerb: ["#b3261e", "#e7e2dc"], barrier: ["#1c1917", "#f97316"], gantry: "#7c2d12", banner: ["#7c2d12", "#fed7aa", "#f97316"] },
+  frozen: { turf: ["#e8f0f8", "#dbe6f2"], kerb: ["#b3261e", "#ecebe8"], barrier: ["#f8fafc", "#38bdf8"], gantry: "#0c4a6e", banner: ["#0c4a6e", "#f8fafc", "#7dd3fc"] },
   jungle: { turf: ["#6b5a36", "#5f4f2f"], kerb: ["#ca8a04", "#fef3c7"], barrier: ["#a8a29e", "#57534e"], gantry: "#3f6212", banner: ["#3f6212", "#fef9c3", "#facc15"] },
   sea: { turf: ["#dcc891", "#d0bb82"], kerb: ["#f97316", "#f8fafc"], barrier: ["#f8fafc", "#f97316"], gantry: "#0e7490", banner: ["#0e7490", "#f8fafc", "#fde047"] },
   chaos: { road: { base: "#1a1230", edge: "#f0abfc", centre: "#67e8f9", speckle: 0.5 }, turf: ["#2a1a4a", "#24163f"], kerb: ["#f0abfc", "#22d3ee"], barrier: ["#1e1b4b", "#c026d3"], led: "#f0abfc", ledGlow: 3, gantry: "#581c87", banner: ["#581c87", "#f0abfc", "#67e8f9"] },
@@ -275,7 +286,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     // --- Road
     const roadMesh = new THREE.Mesh(
       strip(track, -road, 0.05, road, 0.05, { uvScale: 10 }),
-      new THREE.MeshStandardMaterial({ map: keep(roadTexture(pal.road)), roughness: pal.roadRoughness, metalness: pal.roadMetalness }),
+      roadMaterial(keep(roadTexture(pal.road)), ROAD_TINT[theme] ?? "#d6d6d6", pal.roadRoughness, pal.roadMetalness),
     );
     roadMesh.geometry.computeVertexNormals();
     roadMesh.receiveShadow = true;
@@ -285,7 +296,8 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
     const turfTex = keep(turfTexture(pal.turf[0], pal.turf[1]));
     const turfGeo = mergeGeometries([strip(track, -wall, 0.03, -road - 1.3, 0.03, { uvScale: 6 }), strip(track, road + 1.3, 0.03, wall, 0.03, { uvScale: 6 })], false)!;
     turfGeo.computeVertexNormals();
-    const turf = new THREE.Mesh(turfGeo, new THREE.MeshStandardMaterial({ map: turfTex, roughness: pal.turfRoughness, metalness: neonLike ? 0.4 : 0 }));
+    const verge = VERGE[theme];
+    const turf = new THREE.Mesh(turfGeo, verge ? groundMaterial(verge) : new THREE.MeshStandardMaterial({ map: turfTex, roughness: pal.turfRoughness, metalness: neonLike ? 0.4 : 0 }));
     turf.receiveShadow = true;
     group.add(turf);
 
@@ -303,33 +315,79 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
         ],
         (i) => (Math.floor(i / 2) % 2 ? kerbA : kerbB),
       ),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: verge ? 0.7 : 0.35, side: THREE.DoubleSide }),
     );
     kerb.receiveShadow = true;
     group.add(kerb);
 
     // --- Barriers
-    const barA = new THREE.Color(pal.barrier[0]);
-    const barB = new THREE.Color(pal.barrier[1]);
-    const barrier = new THREE.Mesh(
-      sweep(
-        track,
-        [
-          [wall, 0],
-          [wall, 0.95],
-          [wall + 0.14, 1.32],
-          [wall + 0.86, 1.32],
-          [wall + 1.0, 0.95],
-          [wall + 1.0, 0],
-        ],
-        (i) => (Math.floor(i / 5) % 2 ? barA : barB),
-        true,
-      ),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: neonLike ? 0.3 : 0.4, metalness: neonLike ? 0.6 : 0.05, side: THREE.DoubleSide }),
-    );
-    barrier.castShadow = true;
-    barrier.receiveShadow = true;
-    group.add(barrier);
+    if (verge) {
+      // Photo-scanned concrete barriers, set end to end along both edges.
+      const length = 2.62;
+      const scale = 1.7;
+      const places: THREE.Matrix4[] = [];
+      const q = new THREE.Quaternion();
+      const up = new THREE.Vector3(0, 1, 0);
+      const step = Math.max(1, Math.round(length / track.spacing));
+      for (const side of [1, -1]) {
+        for (let i = 0; i < track.n; i += step) {
+          const j = (i + step) % track.n;
+          let blocked = false;
+          for (let k = 0; k <= step; k++) {
+            const s = (i + k) % track.n;
+            if (track.gap[s] || track.dyn[s] || (track.open[s] & (side > 0 ? 2 : 1)) !== 0) blocked = true;
+          }
+          if (blocked) continue;
+          const lat = side * (wall + 0.52);
+          const ax = track.px[i] + track.nx[i] * lat;
+          const az = track.pz[i] + track.nz[i] * lat;
+          const ay = track.hy[i] + lat * track.bankT[i];
+          const bx = track.px[j] + track.nx[j] * lat;
+          const bz = track.pz[j] + track.nz[j] * lat;
+          const by = track.hy[j] + lat * track.bankT[j];
+          const run = Math.hypot(bx - ax, bz - az);
+          // Each block follows the road: yawed along the edge, pitched with the slope.
+          q.setFromEuler(new THREE.Euler(0, Math.atan2(-(bz - az), bx - ax) + (side > 0 ? Math.PI : 0), (side > 0 ? -1 : 1) * Math.atan2(by - ay, run), "YXZ"));
+          places.push(new THREE.Matrix4().compose(new THREE.Vector3((ax + bx) / 2, (ay + by) / 2 - 0.03, (az + bz) / 2), q, new THREE.Vector3((run / 1.54) * 1.01, scale, scale)));
+        }
+      }
+      void up;
+      void scannedModel("barrier")
+        .then((model) => {
+          if (group.userData.disposed) return;
+          const base = new THREE.MeshStandardMaterial({ map: model.map, normalMap: model.normalMap, roughness: 0.88, color: verge.barrierTint ?? "#ffffff" });
+          const mesh = new THREE.InstancedMesh(model.geometry, verge.snow ? snowCap(base, verge.snow) : base, places.length);
+          places.forEach((m, i) => mesh.setMatrixAt(i, m));
+          mesh.instanceMatrix.needsUpdate = true;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          mesh.frustumCulled = false;
+          group.add(mesh);
+        })
+        .catch(() => undefined);
+    } else {
+      const barA = new THREE.Color(pal.barrier[0]);
+      const barB = new THREE.Color(pal.barrier[1]);
+      const barrier = new THREE.Mesh(
+        sweep(
+          track,
+          [
+            [wall, 0],
+            [wall, 0.95],
+            [wall + 0.14, 1.32],
+            [wall + 0.86, 1.32],
+            [wall + 1.0, 0.95],
+            [wall + 1.0, 0],
+          ],
+          (i) => (Math.floor(i / 5) % 2 ? barA : barB),
+          true,
+        ),
+        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: neonLike ? 0.3 : 0.4, metalness: neonLike ? 0.6 : 0.05, side: THREE.DoubleSide }),
+      );
+      barrier.castShadow = true;
+      barrier.receiveShadow = true;
+      group.add(barrier);
+    }
 
     // --- Light strip along the top of both barriers
     const led = new THREE.Color(pal.led).multiplyScalar(pal.ledGlow);
@@ -465,6 +523,7 @@ export function TrackSurface({ track, theme }: { track: Track; theme: TrackTheme
 
   useEffect(
     () => () => {
+      root.userData.disposed = true;
       disposeTree(root);
       for (const t of root.userData.textures as THREE.Texture[]) t.dispose();
     },

@@ -2,86 +2,130 @@
  * Mountain environment for tracks with real elevation. The landscape is
  * generated from the circuit itself: the ground meets the road wherever it
  * goes, falls away into a ravine under gaps and off a cliff at open edges, and
- * rises into peaks further out. Scenery only; the road is the only thing karts touch.
+ * rises into peaks further out. It is surfaced with photo-scanned ground and
+ * rock, scattered with scanned boulders and planted with forest.
+ * Scenery only; the road is the only thing karts touch.
  */
 import { useEffect, useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Track } from "@office-kart/shared";
 import type { Quality } from "../../store";
-import { bake, compose, disposeTree } from "../builder";
-import { glowTexture } from "../textures";
+import { scannedModel } from "../assets";
+import { disposeTree } from "../builder";
+import { iceMaterial, lavaMaterial, snowCap, terrainMaterial, type TerrainLook } from "../materials";
 import { strip } from "../TrackSurface";
 import { mulberry, trackBounds } from "./placement";
-
-type TreeKind = "pine" | "snowpine" | "palm" | "dead" | "coral" | "crystal";
+import { barkMaterial, boughTexture, burntGeometry, coniferGeometry, foliageMaterial, type TreeKit } from "./trees";
 
 interface TerrainPalette {
-  ground: [string, string];
-  rock: string;
-  high: string;
-  /** Height above which the high colour (snow, ash) takes over. */
-  highLine: number;
-  shore: string;
-  water: string;
-  /** Glowing liquid (lava, energy) rather than water. */
-  waterGlow: number;
+  look: TerrainLook;
+  /** What fills the low ground. */
+  liquid: "ice" | "lava" | "water";
   waterLevel: number;
-  skyTop: string;
-  skyHorizon: string;
   fog: string;
-  hemi: [string, string, number];
-  tree: TreeKind;
-  trees: number;
+  fogRange: [number, number];
+  trees: "conifer" | "burnt" | "none";
+  treeCount: number;
+  /** Trees stop growing above this height. */
+  treeLine: number;
+  foliageTint: string;
+  barkTint: string;
+  rockTint: string;
+  /** 0..1: snow lying on rocks and branches. */
+  snow: number;
   peaks: number;
-  sun: boolean;
+  relief: number;
 }
+
+const ROCKY: TerrainLook = { ground: "ash", rock: "cliff", groundSize: 14, rockSize: 26, groundTint: "#c8c0a8", rockTint: "#ffffff", slope: [0.2, 0.42], groundRough: 0.96, rockRough: 0.9 };
 
 const TERRAIN: Record<string, TerrainPalette> = {
-  alpine: { ground: ["#5f9e45", "#7aa850"], rock: "#8a8d94", high: "#f3f6fb", highLine: 62, shore: "#d9c9a0", water: "#2f86c9", waterGlow: 0, waterLevel: -7, skyTop: "#3f8ff0", skyHorizon: "#d5ecff", fog: "#d3e8fb", hemi: ["#d6ebff", "#6f8552", 0.85], tree: "pine", trees: 1700, peaks: 1, sun: true },
-  volcano: { ground: ["#3b3130", "#4b3a34"], rock: "#262021", high: "#6a3324", highLine: 70, shore: "#7a2a12", water: "#ff5a1c", waterGlow: 2.6, waterLevel: -9, skyTop: "#1c0d18", skyHorizon: "#e8703a", fog: "#5a3028", hemi: ["#ffc7a3", "#5a2418", 1.15], tree: "dead", trees: 500, peaks: 1.35, sun: false },
-  frozen: { ground: ["#eef4fb", "#dde8f4"], rock: "#9db0c6", high: "#ffffff", highLine: 30, shore: "#cfe6f5", water: "#bfe4f8", waterGlow: 0, waterLevel: -6, skyTop: "#5a9be0", skyHorizon: "#eaf4ff", fog: "#e3eefb", hemi: ["#eef6ff", "#9db4cc", 1], tree: "snowpine", trees: 1300, peaks: 1.15, sun: true },
-  jungle: { ground: ["#2f8a3a", "#44a64c"], rock: "#6c705b", high: "#7f8468", highLine: 90, shore: "#b9a66c", water: "#2a9c8c", waterGlow: 0, waterLevel: -6, skyTop: "#3f93d8", skyHorizon: "#d8f0d0", fog: "#bfe0c4", hemi: ["#e6ffd8", "#3d5a2c", 0.85], tree: "palm", trees: 1900, peaks: 0.8, sun: true },
-  sea: { ground: ["#e3d09b", "#d6c188"], rock: "#8f9488", high: "#b9c0b0", highLine: 80, shore: "#e9dcae", water: "#1e80d2", waterGlow: 0, waterLevel: 0, skyTop: "#2f8df0", skyHorizon: "#d9f1ff", fog: "#bfe3f7", hemi: ["#e0f3ff", "#7a8f86", 0.9], tree: "coral", trees: 1500, peaks: 0.55, sun: true },
-  chaos: { ground: ["#5b3396", "#7d45c8"], rock: "#241a44", high: "#f0abfc", highLine: 48, shore: "#22d3ee", water: "#22d3ee", waterGlow: 1.6, waterLevel: -4, skyTop: "#0c0420", skyHorizon: "#c026d3", fog: "#2a1050", hemi: ["#d8b4fe", "#1a0b33", 0.8], tree: "crystal", trees: 900, peaks: 1.2, sun: false },
+  frozen: {
+    look: { ground: "snow", rock: "cliff", groundSize: 11, rockSize: 30, groundTint: "#f4f7fb", rockTint: "#dde3ea", slope: [0.4, 0.66], groundRough: 0.82, rockRough: 0.9 },
+    liquid: "ice",
+    waterLevel: -6,
+    fog: "#d3dde8",
+    fogRange: [160, 1700],
+    trees: "conifer",
+    treeCount: 1500,
+    treeLine: 46,
+    foliageTint: "#c8d4cc",
+    barkTint: "#8a8078",
+    rockTint: "#f0f2f5",
+    snow: 1,
+    peaks: 1.15,
+    relief: 1,
+  },
+  volcano: {
+    look: { ground: "ash", rock: "basalt", groundSize: 13, rockSize: 24, groundTint: "#ece6e0", rockTint: "#e6e0dc", slope: [0.2, 0.42], groundRough: 0.97, rockRough: 0.82 },
+    liquid: "lava",
+    waterLevel: -9,
+    fog: "#9a7a68",
+    fogRange: [260, 2300],
+    trees: "burnt",
+    treeCount: 420,
+    treeLine: 60,
+    foliageTint: "#ffffff",
+    barkTint: "#2a2422",
+    rockTint: "#9a928e",
+    snow: 0,
+    peaks: 1.0,
+    relief: 1.1,
+  },
+  alpine: { look: ROCKY, liquid: "water", waterLevel: -7, fog: "#cfe0ee", fogRange: [200, 1500], trees: "conifer", treeCount: 1500, treeLine: 55, foliageTint: "#ffffff", barkTint: "#8a7868", rockTint: "#b0aca6", snow: 0, peaks: 1, relief: 1 },
+  jungle: { look: ROCKY, liquid: "water", waterLevel: -6, fog: "#bfe0c4", fogRange: [200, 1500], trees: "conifer", treeCount: 1700, treeLine: 80, foliageTint: "#ffffff", barkTint: "#8a7868", rockTint: "#9a9a8a", snow: 0, peaks: 0.8, relief: 1 },
+  sea: { look: { ...ROCKY, groundTint: "#e6d7ae" }, liquid: "water", waterLevel: 0, fog: "#bfe3f7", fogRange: [200, 1500], trees: "none", treeCount: 0, treeLine: 0, foliageTint: "#ffffff", barkTint: "#8a7868", rockTint: "#b0aca6", snow: 0, peaks: 0.55, relief: 0.7 },
+  chaos: { look: { ...ROCKY, groundTint: "#7a6aa8", rockTint: "#8a80b0" }, liquid: "lava", waterLevel: -4, fog: "#2a1050", fogRange: [150, 1300], trees: "burnt", treeCount: 400, treeLine: 60, foliageTint: "#ffffff", barkTint: "#2a2040", rockTint: "#5a5080", snow: 0, peaks: 1.2, relief: 1 },
 };
 
-function treeGeometry(kind: TreeKind): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  if (kind === "pine" || kind === "snowpine") {
-    const greens = kind === "pine" ? ["#2f6b3a", "#3a7d44", "#48914f"] : ["#dfeaf4", "#eef4fb", "#ffffff"];
-    parts.push(bake(new THREE.CylinderGeometry(0.5, 0.7, 3, 6), compose(0, 1.5, 0), "#6b4423"));
-    parts.push(bake(new THREE.ConeGeometry(3.4, 6, 7), compose(0, 5.2, 0), greens[0]));
-    parts.push(bake(new THREE.ConeGeometry(2.6, 5, 7), compose(0, 8.4, 0), greens[1]));
-    parts.push(bake(new THREE.ConeGeometry(1.7, 4, 7), compose(0, 11.2, 0), greens[2]));
-  } else if (kind === "palm") {
-    parts.push(bake(new THREE.CylinderGeometry(0.45, 0.7, 11, 6), compose(0.6, 5.5, 0, { rz: -0.1 }), "#7a5a34"));
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      parts.push(bake(new THREE.ConeGeometry(1.5, 7.5, 4), compose(1.1 + Math.cos(a) * 3, 10.6, Math.sin(a) * 3, { ry: -a, rz: -1.15, sz: 0.35 }), i % 2 ? "#2f9a3e" : "#3fb34f"));
-    }
-  } else if (kind === "dead") {
-    parts.push(bake(new THREE.CylinderGeometry(0.3, 0.7, 9, 5), compose(0, 4.5, 0), "#1c1616"));
-    parts.push(bake(new THREE.CylinderGeometry(0.15, 0.3, 4.5, 4), compose(1.3, 7, 0, { rz: -0.9 }), "#1c1616"));
-    parts.push(bake(new THREE.CylinderGeometry(0.12, 0.26, 3.8, 4), compose(-1.1, 5.6, 0.4, { rz: 1 }), "#1c1616"));
-  } else if (kind === "coral") {
-    const cols = ["#ff6b8b", "#ff9e4a", "#c084fc", "#fde047"];
-    for (let i = 0; i < 5; i++) {
-      const a = (i / 5) * Math.PI * 2;
-      parts.push(bake(new THREE.CylinderGeometry(0.25, 0.6, 3 + (i % 3), 5), compose(Math.cos(a) * 1.1, 1.6 + (i % 3) * 0.5, Math.sin(a) * 1.1, { rz: Math.cos(a) * 0.5, rx: Math.sin(a) * 0.5 }), cols[i % 4]));
-    }
-    parts.push(bake(new THREE.SphereGeometry(1.3, 7, 5), compose(0, 0.7, 0, { sy: 0.6 }), "#fb7185"));
-  } else {
-    const cols = ["#67e8f9", "#f0abfc", "#a5b4fc"];
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      parts.push(bake(new THREE.ConeGeometry(0.9 + (i % 2) * 0.5, 6 + i * 1.5, 5), compose(Math.cos(a) * 1.2, 3 + i * 0.7, Math.sin(a) * 1.2, { rz: Math.cos(a) * 0.35, rx: Math.sin(a) * 0.35 }), cols[i % 3], 1.6));
-    }
+// --- Smooth value noise, so hills roll rather than repeat
+const hash = (ix: number, iz: number): number => {
+  let h = (ix * 374761393 + iz * 668265263) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return (((h ^ (h >>> 16)) >>> 0) % 100000) / 100000;
+};
+function noise(x: number, z: number): number {
+  const ix = Math.floor(x);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fz = z - iz;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uz = fz * fz * (3 - 2 * fz);
+  const a = hash(ix, iz);
+  const b = hash(ix + 1, iz);
+  const c = hash(ix, iz + 1);
+  const d = hash(ix + 1, iz + 1);
+  return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz;
+}
+function fbm(x: number, z: number, octaves: number): number {
+  let sum = 0;
+  let amp = 0.5;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * noise(x, z);
+    x = x * 2.03 + 17.1;
+    z = z * 2.03 - 9.4;
+    amp *= 0.5;
   }
-  return mergeGeometries(parts, false)!;
+  return sum;
+}
+const ridged = (x: number, z: number): number => 1 - Math.abs(fbm(x, z, 4) * 2 - 1);
+
+interface Scatter {
+  model: string;
+  matrices: THREE.Matrix4[];
 }
 
-function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): { root: THREE.Group; textures: THREE.Texture[] } {
+interface Built {
+  root: THREE.Group;
+  textures: THREE.Texture[];
+  rocks: Scatter[];
+  rockMaterial: (map: THREE.Texture, normalMap: THREE.Texture) => THREE.Material;
+  tick: ((time: number) => void) | null;
+}
+
+function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): Built {
   const WATER_LEVEL = track.waterLevel > -Infinity ? track.waterLevel : Math.min(pal.waterLevel, track.minY - 5);
   const underwaterTrack = track.waterLevel > -Infinity;
   const r = mulberry(4242);
@@ -89,7 +133,7 @@ function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): { ro
   const textures: THREE.Texture[] = [];
   const wall = track.def.wallHalfWidth;
   const b = trackBounds(track);
-  const pad = 300;
+  const pad = 320;
   const x0 = b.minX - pad;
   const z0 = b.minZ - pad;
   const W = b.maxX - b.minX + pad * 2;
@@ -98,7 +142,7 @@ function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): { ro
   const cz = z0 + D / 2;
 
   /** Ground height anywhere: the road's height near the road, hills and peaks away from it. */
-  const info = { d: 0, near: 0 };
+  const info = { d: 0, idx: 0, lateral: 0 };
   const heightAt = (x: number, z: number): number => {
     let best = 0;
     let bestD = Infinity;
@@ -129,177 +173,201 @@ function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): { ro
     if (track.gap[best]) road = track.hy[best] - 34; // the ravine under a jump
     const o = track.open[best];
     if (o !== 0 && d > wall + 0.5 && ((lateral < 0 && (o & 1) !== 0) || (lateral > 0 && (o & 2) !== 0))) road -= Math.min(46, (d - wall) * 3.2);
-    const rim = Math.hypot((x - cx) / (W * 0.5), (z - cz) / (D * 0.5));
-    const hills = 9 * Math.sin(x * 0.011 + 1.3) * Math.cos(z * 0.013 - 0.4) + 5 * Math.sin(x * 0.029 + z * 0.021) + 2.5 * Math.sin(x * 0.07 - z * 0.05);
-    const peaks = Math.pow(Math.max(0, rim - 0.5) * 2, 1.7) * 210 * pal.peaks * (0.75 + 0.25 * Math.sin(x * 0.02) * Math.cos(z * 0.017));
-    const t0 = Math.max(0, Math.min(1, (d - (wall + 3)) / 75));
+    const hills = ((fbm(x * 0.0045, z * 0.0045, 4) - 0.47) * 70 + (fbm(x * 0.021 + 40, z * 0.021, 3) - 0.5) * 12) * pal.relief;
+    // Mountains stand back from the circuit, so there is always sky above the road.
+    const away = Math.max(0, Math.min(1, (d - 85) / 330));
+    const peaks = Math.pow(away, 1.6) * 300 * pal.peaks * (0.3 + 1.15 * ridged(x * 0.0032 + 7, z * 0.0032));
+    const t0 = Math.max(0, Math.min(1, (d - (wall + 3)) / 80));
     const t = t0 * t0 * (3 - 2 * t0);
     info.d = d;
-    info.near = t;
+    info.idx = best;
+    info.lateral = lateral;
     return road * (1 - t) + (hills + peaks + track.hy[best] * 0.55 - 3 + (underwaterTrack ? 2 : 0)) * t;
   };
 
-  // --- Terrain mesh, faceted, coloured by height and steepness
-  const N = quality === "low" ? 110 : 170;
+  // --- Terrain mesh: smooth, lit by its real slope, tinted in broad patches
+  const N = quality === "low" ? 130 : quality === "medium" ? 190 : 250;
   const geo = new THREE.PlaneGeometry(W, D, N, N).rotateX(-Math.PI / 2).translate(cx, 0, cz);
   const pos = geo.getAttribute("position") as THREE.BufferAttribute;
-  const nearRoad = new Float32Array(pos.count);
+  const col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
-    pos.setY(i, heightAt(pos.getX(i), pos.getZ(i)));
-    nearRoad[i] = info.d;
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const y = heightAt(x, z);
+    pos.setY(i, y);
+    // Large soft patches of lighter and darker ground; darker and damper beside liquid.
+    let k = 0.86 + fbm(x * 0.012 + 3, z * 0.012, 3) * 0.3;
+    if (pal.liquid !== "ice" && y < WATER_LEVEL + 4) k *= 0.55 + 0.45 * Math.max(0, (y - WATER_LEVEL) / 4);
+    col.set([k, k, k], i * 3);
   }
-  const flat = geo.toNonIndexed();
-  geo.dispose();
-  flat.computeVertexNormals();
-  const fp = flat.getAttribute("position");
-  const fn = flat.getAttribute("normal");
-  const col = new Float32Array(fp.count * 3);
-  const grass = new THREE.Color(pal.ground[0]);
-  const grass2 = new THREE.Color(pal.ground[1]);
-  const rock = new THREE.Color(pal.rock);
-  const snow = new THREE.Color(pal.high);
-  const sand = new THREE.Color(pal.shore);
-  const c = new THREE.Color();
-  for (let i = 0; i < fp.count; i += 3) {
-    const y = (fp.getY(i) + fp.getY(i + 1) + fp.getY(i + 2)) / 3;
-    const steep = 1 - fn.getY(i);
-    const noise = Math.sin(fp.getX(i) * 0.9) * Math.cos(fp.getZ(i) * 0.7) * 0.5 + 0.5;
-    if (y < WATER_LEVEL + 2.5) c.copy(sand);
-    else if (steep > 0.28) c.copy(rock).multiplyScalar(0.85 + noise * 0.25);
-    else if (y > pal.highLine + noise * 14) c.copy(snow);
-    else if (y > pal.highLine - 22) c.copy(rock).lerp(snow, Math.min(1, (y - pal.highLine + 22) / 30) * noise);
-    else c.copy(grass).lerp(grass2, noise);
-    for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
-  }
-  void nearRoad;
-  flat.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  const terrain = new THREE.Mesh(flat, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, flatShading: true }));
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const terrain = new THREE.Mesh(geo, terrainMaterial(pal.look));
   terrain.receiveShadow = true;
   root.add(terrain);
 
-  // --- Rock skirts under the road edges, so banked and raised sections look solid
-  const stone = new THREE.Color("#6f6a66");
-  const skirt = mergeGeometries([strip(track, wall + 1, 0, wall + 2.2, -9, { color: () => stone }), strip(track, -wall - 2.2, -9, -wall - 1, 0, { color: () => stone })], false)!;
+  // --- Rock under the road edges, so banked and raised sections look solid
+  const white = new THREE.Color(1, 1, 1);
+  const skirt = mergeGeometries([strip(track, wall + 1, 0, wall + 2.2, -9, { color: () => white }), strip(track, -wall - 2.2, -9, -wall - 1, 0, { color: () => white })], false)!;
   skirt.computeVertexNormals();
-  const skirtMesh = new THREE.Mesh(skirt, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
+  const skirtMat = terrainMaterial({ ...pal.look, slope: [0, 0.01] });
+  skirtMat.side = THREE.DoubleSide;
+  const skirtMesh = new THREE.Mesh(skirt, skirtMat);
   skirtMesh.receiveShadow = true;
   root.add(skirtMesh);
 
-  // --- Water
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(W, D),
-    pal.waterGlow > 0
-      ? new THREE.MeshBasicMaterial({ color: new THREE.Color(pal.water).multiplyScalar(pal.waterGlow), toneMapped: false, side: THREE.DoubleSide })
-      : new THREE.MeshStandardMaterial({ color: pal.water, roughness: 0.08, metalness: 0.35, transparent: true, opacity: underwaterTrack ? 0.62 : 0.86, side: THREE.DoubleSide, depthWrite: !underwaterTrack }),
-  );
+  // --- Ice, lava or water in the low ground
+  let tick: Built["tick"] = null;
+  let liquidMat: THREE.Material;
+  if (pal.liquid === "ice") liquidMat = iceMaterial();
+  else if (pal.liquid === "lava") {
+    const lava = lavaMaterial();
+    liquidMat = lava.material;
+    tick = lava.tick;
+  } else liquidMat = new THREE.MeshStandardMaterial({ color: "#16506e", roughness: 0.06, metalness: 0.1, transparent: true, opacity: underwaterTrack ? 0.62 : 0.9, depthWrite: !underwaterTrack });
+  liquidMat.side = THREE.DoubleSide;
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(W, D), liquidMat);
   water.rotation.x = -Math.PI / 2;
   water.position.set(cx, WATER_LEVEL, cz);
+  water.receiveShadow = pal.liquid !== "lava";
   root.add(water);
 
-  // --- Pines and boulders, instanced
+  // --- Forest. Trees stand in stands and thin out with height; a share of them line the road.
   const m = new THREE.Matrix4();
-  const treeGeo = treeGeometry(pal.tree);
-  const treeCount = quality === "low" ? Math.round(pal.trees * 0.4) : pal.trees;
-  const trees = new THREE.InstancedMesh(treeGeo, pal.tree === "crystal" ? new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }), treeCount);
-  let placed = 0;
-  for (let tries = 0; tries < treeCount * 6 && placed < treeCount; tries++) {
-    const x = x0 + r() * W;
-    const z = z0 + r() * D;
-    const y = heightAt(x, z);
-    const wet = y < WATER_LEVEL + 1.5;
-    // Coral grows under water; everything else on dry land.
-    if (info.d < wall + 7 || y > 58 || (pal.tree === "coral" ? !wet : wet)) continue;
-    // Keep trees off cliffs: compare with the ground a few metres away.
-    if (Math.abs(heightAt(x + 4, z) - y) > 3.2 || Math.abs(heightAt(x, z + 4) - y) > 3.2) continue;
-    const s = 0.8 + r() * 1.3;
-    m.compose(new THREE.Vector3(x, y - 0.3, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), r() * 6.28), new THREE.Vector3(s, s * (0.85 + r() * 0.4), s));
-    trees.setMatrixAt(placed++, m);
-  }
-  trees.count = placed;
-  trees.instanceMatrix.needsUpdate = true;
-  trees.castShadow = true;
-  trees.receiveShadow = true;
-  trees.frustumCulled = false;
-  root.add(trees);
-
-  const rockCount = 260;
-  const rocks = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: pal.rock, roughness: 0.95, flatShading: true }), rockCount);
-  placed = 0;
-  for (let tries = 0; tries < rockCount * 5 && placed < rockCount; tries++) {
-    const x = x0 + r() * W;
-    const z = z0 + r() * D;
-    const y = heightAt(x, z);
-    const s = 1 + r() * 4.5;
-    // Big boulders stand further back, so none leans over the barrier or into view of the road.
-    if (info.d < wall + 4 + s * 1.6 || (y < WATER_LEVEL && !underwaterTrack)) continue;
-    m.compose(new THREE.Vector3(x, y + s * 0.2, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 3, r() * 3, r() * 3)), new THREE.Vector3(s, s * (0.6 + r() * 0.5), s * (0.8 + r() * 0.6)));
-    rocks.setMatrixAt(placed++, m);
-  }
-  rocks.count = placed;
-  rocks.instanceMatrix.needsUpdate = true;
-  rocks.castShadow = true;
-  rocks.receiveShadow = true;
-  rocks.frustumCulled = false;
-  root.add(rocks);
-
-  // --- Sky dome, sun and clouds
-  const skyGeo = new THREE.SphereGeometry(1500, 32, 18);
-  const sp = skyGeo.getAttribute("position");
-  const sc = new Float32Array(sp.count * 3);
-  const top = new THREE.Color(pal.skyTop);
-  const horizon = new THREE.Color(pal.skyHorizon);
-  for (let i = 0; i < sp.count; i++) {
-    const t = Math.max(0, Math.min(1, sp.getY(i) / 700));
-    c.copy(horizon).lerp(top, Math.pow(t, 0.6));
-    sc.set([c.r, c.g, c.b], i * 3);
-  }
-  skyGeo.setAttribute("color", new THREE.BufferAttribute(sc, 3));
-  const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
-  sky.renderOrder = -10;
-  root.add(sky);
-
-  const glow = glowTexture();
-  textures.push(glow);
-  const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: new THREE.Color(6, 5.4, 4), transparent: true, depthWrite: false, fog: false, toneMapped: false }));
-  sun.position.set(cx + 0.52 * 1300, 0.72 * 1300, cz + 0.32 * 1300);
-  sun.scale.set(260, 260, 1);
-  if (pal.sun) root.add(sun);
-
-  const cloudCount = 46;
-  const clouds = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: "#ffffff", fog: false, transparent: true, opacity: 0.92 }), cloudCount * 4);
-  let ci = 0;
-  for (let k = 0; k < cloudCount; k++) {
-    const x = cx + (r() - 0.5) * 2400;
-    const z = cz + (r() - 0.5) * 2400;
-    const y = 230 + r() * 160;
-    for (let p = 0; p < 4; p++) {
-      const s = 26 + r() * 34;
-      m.compose(new THREE.Vector3(x + (p - 1.5) * 30 + r() * 12, y + r() * 8, z + r() * 26), new THREE.Quaternion(), new THREE.Vector3(s * 1.5, s * 0.5, s));
-      clouds.setMatrixAt(ci++, m);
+  const q = new THREE.Quaternion();
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  const tint = new THREE.Color();
+  if (pal.trees !== "none") {
+    const detail = quality === "low" ? 0.45 : quality === "medium" ? 0.75 : 1;
+    const total = Math.round(pal.treeCount * (quality === "low" ? 0.4 : quality === "medium" ? 0.7 : 1));
+    const variants = 3;
+    const kits: TreeKit[] = [];
+    for (let v = 0; v < variants; v++) kits.push(pal.trees === "conifer" ? coniferGeometry(11 + v * 7, detail) : burntGeometry(5 + v * 3));
+    const spots: { x: number; y: number; z: number; s: number }[][] = kits.map(() => []);
+    const tryPlant = (x: number, z: number, crowd: number): boolean => {
+      const y = heightAt(x, z);
+      if (info.d < wall + 6.5 || y > pal.treeLine || y < WATER_LEVEL + 1.2) return false;
+      if (track.gap[info.idx] && info.d < wall + 30) return false;
+      // Keep trees off cliffs: compare with the ground a few metres away.
+      if (Math.abs(heightAt(x + 4, z) - y) > 3 || Math.abs(heightAt(x, z + 4) - y) > 3) return false;
+      if (fbm(x * 0.011 + 90, z * 0.011, 3) < crowd) return false;
+      const thin = Math.max(0, (y - pal.treeLine * 0.6) / (pal.treeLine * 0.4));
+      if (r() < thin) return false;
+      spots[Math.floor(r() * variants)].push({ x, y, z, s: (0.7 + r() * r() * 1.0) * (1 - thin * 0.4) });
+      return true;
+    };
+    let planted = 0;
+    const lining = Math.round(total * 0.4);
+    for (let tries = 0; tries < lining * 8 && planted < lining; tries++) {
+      const i = Math.floor(r() * track.n);
+      const lat = (r() < 0.5 ? -1 : 1) * (wall + 7 + r() * r() * 60);
+      if (tryPlant(track.px[i] + track.nx[i] * lat, track.pz[i] + track.nz[i] * lat, 0.38)) planted++;
     }
+    for (let tries = 0; tries < total * 10 && planted < total; tries++) {
+      if (tryPlant(x0 + r() * W, z0 + r() * D, 0.47)) planted++;
+    }
+    const bough = pal.trees === "conifer" ? boughTexture(pal.snow) : null;
+    if (bough) textures.push(bough);
+    const foliage = bough ? foliageMaterial(bough, pal.foliageTint) : null;
+    const bark = barkMaterial(pal.barkTint);
+    kits.forEach((kit, v) => {
+      const list = spots[v];
+      const meshes: THREE.InstancedMesh[] = [new THREE.InstancedMesh(kit.wood, bark, list.length)];
+      if (kit.foliage && foliage) meshes.push(new THREE.InstancedMesh(kit.foliage, foliage, list.length));
+      list.forEach((sp, i) => {
+        q.setFromAxisAngle(yAxis, r() * Math.PI * 2);
+        m.compose(new THREE.Vector3(sp.x, sp.y - 0.35, sp.z), q, new THREE.Vector3(sp.s, sp.s * (0.9 + r() * 0.25), sp.s));
+        const k = 0.72 + r() * 0.4;
+        tint.setRGB(k, k * (0.96 + r() * 0.08), k * (0.92 + r() * 0.1));
+        for (const mesh of meshes) {
+          mesh.setMatrixAt(i, m);
+          mesh.setColorAt(i, tint);
+        }
+      });
+      for (const mesh of meshes) {
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.castShadow = quality !== "low";
+        mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
+        root.add(mesh);
+      }
+    });
   }
-  clouds.instanceMatrix.needsUpdate = true;
-  clouds.frustumCulled = false;
-  if (pal.sun) root.add(clouds);
 
-  return { root, textures };
+  // --- Boulders and outcrops: positions are chosen now, the scanned models arrive a moment later
+  const rocks: Scatter[] = [
+    { model: "namaqualand_boulder_02", matrices: [] },
+    { model: "rock_09", matrices: [] },
+  ];
+  const rockCount = quality === "low" ? 150 : 420;
+  for (let tries = 0, placed = 0; tries < rockCount * 6 && placed < rockCount; tries++) {
+    const near = r() < 0.45;
+    let x: number;
+    let z: number;
+    if (near) {
+      const i = Math.floor(r() * track.n);
+      const lat = (r() < 0.5 ? -1 : 1) * (wall + 5 + r() * 45);
+      x = track.px[i] + track.nx[i] * lat;
+      z = track.pz[i] + track.nz[i] * lat;
+    } else {
+      x = x0 + r() * W;
+      z = z0 + r() * D;
+    }
+    const y = heightAt(x, z);
+    const kind = r() < 0.55 ? 0 : 1;
+    // Size in metres across; big ones stand further back so none leans over the barrier.
+    const size = 1.2 + r() * r() * (kind === 0 ? 9 : 6);
+    if (info.d < wall + 4 + size * 0.9 || (y < WATER_LEVEL - 0.5 && !underwaterTrack)) continue;
+    const native = kind === 0 ? 2.5 : 0.14;
+    const s = size / native;
+    q.setFromAxisAngle(yAxis, r() * Math.PI * 2);
+    rocks[kind].matrices.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y - size * 0.08, z), q, new THREE.Vector3(s, s * (0.8 + r() * 0.5), s)));
+    placed++;
+  }
+  const rockMaterial = (map: THREE.Texture, normalMap: THREE.Texture): THREE.Material => {
+    const mat = new THREE.MeshStandardMaterial({ map, normalMap, color: pal.rockTint, roughness: 0.92 });
+    return pal.snow > 0 ? snowCap(mat, pal.snow) : mat;
+  };
+
+  return { root, textures, rocks, rockMaterial, tick };
 }
 
 export function TerrainTheme({ track, quality }: { track: Track; quality: Quality }) {
   const pal = TERRAIN[track.def.theme] ?? TERRAIN.alpine;
   const built = useMemo(() => buildTerrain(track, quality, pal), [track, quality, pal]);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    let alive = true;
+    for (const scatter of built.rocks) {
+      if (scatter.matrices.length === 0) continue;
+      void scannedModel(scatter.model)
+        .then((model) => {
+          if (!alive) return;
+          const mesh = new THREE.InstancedMesh(model.geometry, built.rockMaterial(model.map, model.normalMap), scatter.matrices.length);
+          scatter.matrices.forEach((mat, i) => mesh.setMatrixAt(i, mat));
+          mesh.instanceMatrix.needsUpdate = true;
+          mesh.castShadow = quality !== "low";
+          mesh.receiveShadow = true;
+          mesh.frustumCulled = false;
+          built.root.add(mesh);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      alive = false;
+      // Shared scans and photo textures stay cached for the next race; only what this track built is freed.
+      built.root.traverse((o) => {
+        const mesh = o as THREE.InstancedMesh;
+        if (mesh.isInstancedMesh) mesh.dispose();
+      });
       disposeTree(built.root);
       for (const t of built.textures) t.dispose();
-    },
-    [built],
-  );
+    };
+  }, [built, quality]);
+  useFrame(({ clock }) => built.tick?.(clock.elapsedTime));
   return (
     <>
-      <color attach="background" args={[pal.fog]} />
-      <fog attach="fog" args={[pal.fog, 320, 1500]} />
-      <hemisphereLight args={pal.hemi} />
+      <fog attach="fog" args={[pal.fog, pal.fogRange[0], pal.fogRange[1]]} />
       <primitive object={built.root} />
     </>
   );

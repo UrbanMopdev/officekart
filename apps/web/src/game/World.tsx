@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { worldBackdrop, worldSky } from "./assets";
 import { DEFAULT_TRACK_ID, FLAG, FX, KART, angleDiff, driftLevel, getTrack, locate } from "@office-kart/shared";
 import { net, type KartSample } from "../net/connection";
 import { useStore, type Quality } from "../store";
@@ -36,14 +37,25 @@ const SPARK: [number, number, number][] = [
 
 const LIGHTING: Record<string, { sun: string; sunIntensity: number; dir: readonly [number, number, number]; env: number }> = {
   sky: { sun: "#fff6e0", sunIntensity: 3.6, dir: [0.5, 0.74, 0.3], env: 0.5 },
-  volcano: { sun: "#ffc08f", sunIntensity: 3.4, dir: [0.4, 0.6, 0.5], env: 0.5 },
-  frozen: { sun: "#eef6ff", sunIntensity: 3.3, dir: [0.5, 0.7, 0.35], env: 0.55 },
+  volcano: { sun: "#ffc79c", sunIntensity: 4.2, dir: [0.72, 0.37, 0.58], env: 0.5 },
+  frozen: { sun: "#ffe3c2", sunIntensity: 3.6, dir: [0.72, 0.37, 0.58], env: 0.55 },
   jungle: { sun: "#fff0c8", sunIntensity: 3.3, dir: [0.45, 0.78, 0.3], env: 0.4 },
   sea: { sun: "#fff6e0", sunIntensity: 3.6, dir: [0.4, 0.82, 0.3], env: 0.5 },
   chaos: { sun: "#d9b8ff", sunIntensity: 2.6, dir: [0.45, 0.7, 0.4], env: 0.4 },
   office: { sun: "#ffedcc", sunIntensity: 4.4, dir: [0.48, 0.78, 0.4], env: 0.38 },
-  neon: { sun: "#9fb6ff", sunIntensity: 0.9, dir: [-0.4, 0.8, 0.3], env: 0.3 },
+  neon: { sun: "#9fb6ff", sunIntensity: 0.9, dir: [0.7, 0.5, 0.5], env: 0.3 },
   alpine: { sun: "#fff3da", sunIntensity: 3.8, dir: [0.52, 0.72, 0.32], env: 0.45 },
+};
+
+/**
+ * Photographed skies. Each lights the scene (so paint, ice and wet tarmac
+ * reflect real clouds) and is drawn behind it. The sun in LIGHTING points the
+ * same way as the sun or moon in the photograph.
+ */
+const SKIES: Record<string, { name: string; env: number; backdrop: number }> = {
+  frozen: { name: "day", env: 0.85, backdrop: 0.75 },
+  volcano: { name: "ember", env: 1.5, backdrop: 0.6 },
+  neon: { name: "night", env: 1.1, backdrop: 1.6 },
 };
 
 /** How many whole particles to emit this frame for a given rate. */
@@ -96,18 +108,37 @@ export function World({ quality }: { quality: Quality }) {
   const party = useRef({ race: -1, done: false });
 
   // Image-based lighting: gives paint, metal and glass something to reflect.
+  // Tracks with a photographed sky are lit by it; the rest by a neutral studio.
   useEffect(() => {
+    let alive = true;
     const pmrem = new THREE.PMREMGenerator(gl);
     const envScene = new RoomEnvironment();
     const target = pmrem.fromScene(envScene, 0.04);
+    const previous = { background: scene.background, intensity: scene.backgroundIntensity };
     scene.environment = target.texture;
     scene.environmentIntensity = light.env;
+    const sky = SKIES[theme];
+    if (sky) {
+      scene.background = worldBackdrop(sky.name);
+      // The picture is stored at a quarter brightness to keep its highlights.
+      scene.backgroundIntensity = 4 * sky.backdrop;
+      void worldSky(sky.name)
+        .then((lit) => {
+          if (!alive) return;
+          scene.environment = lit;
+          scene.environmentIntensity = sky.env;
+        })
+        .catch(() => undefined);
+    }
     return () => {
+      alive = false;
       scene.environment = null;
+      scene.background = previous.background;
+      scene.backgroundIntensity = previous.intensity;
       target.dispose();
       pmrem.dispose();
     };
-  }, [gl, scene, light.env]);
+  }, [gl, scene, light.env, theme]);
 
   useEffect(() => {
     if (new URLSearchParams(location.search).has("preview")) (window as unknown as Record<string, unknown>).__ok = { gl, scene };

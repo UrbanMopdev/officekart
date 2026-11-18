@@ -726,7 +726,9 @@ export class KartVisual {
     // Body attitude: slide into drifts, lean out of corners, squat under power.
     const grip = Math.min(1, Math.abs(speed) / 22);
     this.slide += (-drift * 0.42 - this.slide) * k;
-    this.roll += (this.steer * grip * 0.075 + this.slide * 0.22 - this.roll) * k;
+    // A motorbike banks hard into every corner; four wheels only roll a little.
+    const bank = this.vehicle === 1 ? this.steer * grip * 0.5 + this.slide * 0.35 : this.steer * grip * 0.075 + this.slide * 0.22;
+    this.roll += (bank - this.roll) * k;
     this.pitch += (Math.max(-0.05, Math.min(0.05, -accel * 0.0022)) - this.pitch) * k;
     // A boost kicks the nose up for a moment; a landing squashes the kart and it springs back.
     if (boosting && !this.prevBoost) this.wheelie = 1;
@@ -752,7 +754,8 @@ export class KartVisual {
     this.cheer = Math.max(0, this.cheer - dt);
     const up = tricking || this.cheer > 0 || spun ? 1 : 0;
     this.armsUp += (up - this.armsUp) * (1 - Math.exp(-dt * 12));
-    const lean = this.steer * grip * 0.13 - this.slide * 0.18;
+    // On the bike the rider is already leaning with the machine, and hangs off only a touch more.
+    const lean = this.vehicle === 1 ? this.steer * grip * 0.06 : this.steer * grip * 0.13 - this.slide * 0.18;
     this.rider.rotation.z = lean;
     this.rider.position.x = lean * 0.75;
     this.rider.rotation.x = Math.max(-0.12, Math.min(0.16, accel * 0.004)) + this.squash * 0.5;

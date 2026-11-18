@@ -1,0 +1,18 @@
+Photo-scanned skies, ground textures and models in this folder come from
+Poly Haven (https://polyhaven.com), which publishes all of its assets under
+CC0 1.0 (public domain): https://polyhaven.com/license
+
+They have been resized, re-encoded and in some cases colour-graded or
+simplified for the game. Poly Haven asset names:
+
+  sky/day.*, sky/ember.*      kloppenheim_06_puresky (ember is a warm grade of it)
+  sky/night.*                 kloppenheim_02_puresky
+  tex/asphalt_*               asphalt_track
+  tex/snow_*                  snow_02
+  tex/cliff_*                 cliff_side
+  tex/basalt_*                rock_wall_02
+  tex/ash_*                   rocky_terrain_02
+  tex/bark_*                  pine_bark
+  models/barrier*             concrete_road_barrier
+  models/namaqualand_boulder_02*   namaqualand_boulder_02
+  models/rock_09*             rock_09

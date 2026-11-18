@@ -8,6 +8,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { ENTITY, ENTITY_STRIDE, hazardPose, type Hazard, type HazardPose, type Track } from "@office-kart/shared";
 import { net } from "../net/connection";
+import { worldTexture } from "./assets";
 import { disposeTree } from "./builder";
 import { strip } from "./TrackSurface";
 
@@ -73,8 +74,25 @@ function rollingBody(look: string, r: number): THREE.Object3D {
       }
       break;
     default:
-      g.add(part(new THREE.IcosahedronGeometry(r, 1), std("#6b6f76", { roughness: 0.95, flatShading: true })));
+      g.add(part(boulderGeometry(r), new THREE.MeshStandardMaterial({ map: worldTexture("tex/cliff_d.jpg", true), normalMap: worldTexture("tex/cliff_n.jpg", false), color: "#b9b2ac", roughness: 0.93 })));
   }
+  return g;
+}
+
+/** A boulder: a ball knocked out of round, with real rock on it. Stays inside its collision radius. */
+function boulderGeometry(r: number): THREE.BufferGeometry {
+  const g = new THREE.SphereGeometry(r, 20, 14);
+  const p = g.getAttribute("position");
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    const dent = Math.sin(v.x * 3.1 + 1.3) * Math.sin(v.y * 2.7 - 0.4) * Math.sin(v.z * 3.4 + 2.1) * 0.09 + Math.sin(v.x * 7.3) * Math.sin(v.z * 6.1 + v.y * 5.2) * 0.035;
+    v.multiplyScalar(r * (0.9 + dent));
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  const uv = g.getAttribute("uv");
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 2, uv.getY(i));
   return g;
 }
 
