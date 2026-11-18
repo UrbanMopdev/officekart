@@ -243,17 +243,19 @@ function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): Buil
     const variants = 3;
     const kits: TreeKit[] = [];
     for (let v = 0; v < variants; v++) kits.push(pal.trees === "conifer" ? coniferGeometry(11 + v * 7, detail) : burntGeometry(5 + v * 3));
-    const spots: { x: number; y: number; z: number; s: number }[][] = kits.map(() => []);
+    // Each variant is planted twice over: trees near the road cast shadows, the forest beyond does not.
+    const spots: { x: number; y: number; z: number; s: number }[][] = [...kits, ...kits].map(() => []);
     const tryPlant = (x: number, z: number, crowd: number): boolean => {
       const y = heightAt(x, z);
-      if (info.d < wall + 6.5 || y > pal.treeLine || y < WATER_LEVEL + 1.2) return false;
-      if (track.gap[info.idx] && info.d < wall + 30) return false;
+      const d = info.d;
+      if (d < wall + 6.5 || y > pal.treeLine || y < WATER_LEVEL + 1.2) return false;
+      if (track.gap[info.idx] && d < wall + 30) return false;
       // Keep trees off cliffs: compare with the ground a few metres away.
       if (Math.abs(heightAt(x + 4, z) - y) > 3 || Math.abs(heightAt(x, z + 4) - y) > 3) return false;
       if (fbm(x * 0.011 + 90, z * 0.011, 3) < crowd) return false;
       const thin = Math.max(0, (y - pal.treeLine * 0.6) / (pal.treeLine * 0.4));
       if (r() < thin) return false;
-      spots[Math.floor(r() * variants)].push({ x, y, z, s: (0.7 + r() * r() * 1.0) * (1 - thin * 0.4) });
+      spots[Math.floor(r() * variants) + (d < wall + 75 ? 0 : variants)].push({ x, y, z, s: (0.7 + r() * r() * 1.0) * (1 - thin * 0.4) });
       return true;
     };
     let planted = 0;
@@ -270,8 +272,10 @@ function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): Buil
     if (bough) textures.push(bough);
     const foliage = bough ? foliageMaterial(bough, pal.foliageTint) : null;
     const bark = barkMaterial(pal.barkTint);
-    kits.forEach((kit, v) => {
-      const list = spots[v];
+    spots.forEach((list, v) => {
+      if (list.length === 0) return;
+      const kit = kits[v % variants];
+      const near = v < variants;
       const meshes: THREE.InstancedMesh[] = [new THREE.InstancedMesh(kit.wood, bark, list.length)];
       if (kit.foliage && foliage) meshes.push(new THREE.InstancedMesh(kit.foliage, foliage, list.length));
       list.forEach((sp, i) => {
@@ -287,7 +291,7 @@ function buildTerrain(track: Track, quality: Quality, pal: TerrainPalette): Buil
       for (const mesh of meshes) {
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-        mesh.castShadow = quality !== "low";
+        mesh.castShadow = near && quality !== "low";
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
         root.add(mesh);

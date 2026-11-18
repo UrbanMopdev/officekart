@@ -115,7 +115,17 @@ the models in `apps/web/public/models`. `apps/web/src/game/models.ts` loads them
 bodywork, wheels and driver, and repaints one colour swatch per model (bodywork and helmet) in the
 player's colour. Go-Kart, Motorbike, Race Car, Digger and Hot Hatch map to the five vehicle stat lines;
 the five drivers are Kenney's kart racers. If the files cannot be fetched the game falls back to the
-built-in generated karts.
+built-in generated karts. The Motorbike banks into corners; four-wheeled vehicles only roll slightly.
+
+**Photographic landscapes (Frozen Lake, Volcano Pass).** These two tracks are lit by a photographed sky
+(a small HDR panorama lights the scene, a sharper copy is drawn behind it) and surfaced with photo-scanned
+materials from Poly Haven, all CC0: tarmac, snow, ash, cliff and basalt, plus scanned concrete barriers
+and boulders. `apps/web/src/game/materials.ts` projects the ground textures in world space, so the road,
+verges and hills share one grain and cliffs are textured from the side; it also holds the frozen-lake,
+flowing-lava and settled-snow shaders. The landscape itself is smooth noise shaped around the circuit
+(`themes/TerrainTheme.tsx`), and the forest is built from bark-textured trunks and needle-covered bough
+cards (`themes/trees.ts`). Asset names and the licence are listed in `apps/web/public/world/CREDITS.txt`.
+The Office and Neon tracks and the vehicle models are still stylised.
 
 ### Not built, or simplified
 
