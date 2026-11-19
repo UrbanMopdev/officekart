@@ -82,6 +82,8 @@ export interface Cabin {
   /** True once the mirror glass has been mapped to take the rear-view picture. */
   mirrorsMapped: boolean;
   panel: THREE.MeshStandardMaterial | null;
+  /** The panel's own still picture, put back when no car is using the cabin. */
+  panelArt: THREE.Texture | null;
   /** Set while a car is using this cabin: hands it back (hands off the wheel, mirrors and panel restored). */
   release: (() => void) | null;
   /** The windscreen as seen from the front: its lower edge, its sides, and how far forward it starts. */
@@ -146,7 +148,7 @@ function mapMirrors(cabin: Cabin): void {
 }
 
 function prepare(key: string, gltf: { scene: THREE.Group }, spec: CabinSpec): Cabin {
-  const cabin: Cabin = { scene: gltf.scene, spec, spin: gltf.scene.getObjectByName("steerSpin") ?? null, wheelRadius: 0.185, paint: [], paint2: [], accent: [], glass: [], mirrors: [], mirrorsMapped: false, panel: null, release: null, screen: { low: 0, left: 0.7, right: -0.7, from: spec.eye[2] + 0.3 } };
+  const cabin: Cabin = { scene: gltf.scene, spec, spin: gltf.scene.getObjectByName("steerSpin") ?? null, wheelRadius: 0.185, paint: [], paint2: [], accent: [], glass: [], mirrors: [], mirrorsMapped: false, panel: null, panelArt: null, release: null, screen: { low: 0, left: 0.7, right: -0.7, from: spec.eye[2] + 0.3 } };
   const done = new Set<THREE.Material>();
   gltf.scene.traverse((o) => {
     const mesh = o as THREE.Mesh;
@@ -173,7 +175,10 @@ function prepare(key: string, gltf: { scene: THREE.Group }, spec: CabinSpec): Ca
           m.emissiveMap = null;
         }
       }
-      if (name === "m_Dashboard") cabin.panel = m;
+      if (name === "m_Dashboard") {
+        cabin.panel = m;
+        cabin.panelArt = m.emissiveMap;
+      }
       shade(m);
     }
   });

@@ -542,6 +542,16 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
     cabin.panel.roughness = 0.95;
     cabin.panel.envMapIntensity = 0.05;
     cabin.panel.emissiveIntensity = Math.max(cabin.panel.emissiveIntensity, 4);
+    // The packed model's texture coordinates are scaled; the live picture must be laid out the same way.
+    if (cabin.panelArt) {
+      panel.texture.repeat.copy(cabin.panelArt.repeat);
+      panel.texture.offset.copy(cabin.panelArt.offset);
+      panel.texture.rotation = cabin.panelArt.rotation;
+      panel.texture.center.copy(cabin.panelArt.center);
+      panel.texture.channel = cabin.panelArt.channel;
+      panel.texture.wrapS = cabin.panelArt.wrapS;
+      panel.texture.wrapT = cabin.panelArt.wrapT;
+    }
     cabin.panel.emissiveMap = panel.texture;
     cabin.panel.needsUpdate = true;
     setSpeed = panel.set;
@@ -588,7 +598,7 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
     cabin.mirrors.forEach((m, i) => (m.material = mirrorHome[i]));
     hands?.remove();
     if (cabin.spin) cabin.spin.rotation.z = 0;
-    if (cabin.panel) cabin.panel.emissiveMap = null;
+    if (cabin.panel) cabin.panel.emissiveMap = cabin.panelArt;
     shell.remove(cabin.scene);
     for (const d of disposables) d.dispose();
   };
