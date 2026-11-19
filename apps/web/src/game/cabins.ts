@@ -49,6 +49,8 @@ export const CABINS: Record<string, CabinSpec> = {
       m_Carro_Plastico_Brilho: { color: "#0b0b0d", roughness: 0.2, metalness: 0.2 },
       m_Carro_Espelhos: { color: "#e9edf0", roughness: 0.03, metalness: 1 },
     },
+    // The Prius reads out in the strip at the top of the dashboard, angled at the driver.
+    readout: { at: [-0.03, 1.022, 0.772], size: [0.118, 0.036], tilt: 0.2, yaw: -0.42 },
   },
   hondae: { eye: [0.33, 1.165, -0.1] },
   fortuner: { eye: [-0.376, 1.45, -0.04], tones: { m_chrome_only: { color: "#e9edf0", roughness: 0.03, metalness: 1 } } },

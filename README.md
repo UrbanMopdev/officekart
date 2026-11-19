@@ -144,7 +144,7 @@ The Corolla, Prius, Honda e, Fortuner, Golf and the concept car each have their 
 and Cadillac models have no interior, so they borrow the Golf's period cabin. The driver's gloved hands are
 on the wheel and turn with it, with sleeves in your colour (`hands.ts`). The concept car's instrument panel
 is redrawn live, the Golf-era cabins have a pair of analogue dials with moving needles, and the Corolla
-carries a small live speed readout; the mirrors show the road behind. In the rain, drops bead on the glass
+and Prius carry a small live speed readout where their own displays are; the mirrors show the road behind. In the rain, drops bead on the glass
 and two wiper blades sweep the windscreen clear; on the frozen circuit frost creeps in from the edges of
 the glass; on the night circuits the instruments light the cabin and your own headlights reach down the
 road. The driver's head is thrown forward under braking, pressed
