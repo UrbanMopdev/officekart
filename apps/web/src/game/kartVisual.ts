@@ -3,8 +3,9 @@
  * kart; each kart only owns its paint materials, so twelve karts cost little.
  */
 import * as THREE from "three";
-import { buildCockpit, speedScreen, type Cockpit } from "./cockpit";
-import { carFinish, kitDriver, kitReady, kitVehicle, kitVersion, tintedMaterial, type KitVehicle } from "./models";
+import { buildCabinCockpit, buildCockpit, speedScreen, type Cockpit } from "./cockpit";
+import { cabinFor, cabinKey } from "./cabins";
+import { carFinish, kitDriver, kitReady, kitVehicle, kitVersion, tintedMaterial, vehicleCar, type KitVehicle } from "./models";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { FLAG, FX, KART_COLORS } from "@office-kart/shared";
@@ -412,7 +413,11 @@ export class KartVisual {
   /** The camera sits on this in first person. */
   eyeNode: THREE.Object3D = new THREE.Object3D();
   private cockpit: Cockpit | null = null;
-  private cockpitSpec: { eyeHeight: number; front: number; halfWidth: number; scale: number } | null = null;
+  private cockpitSpec: { eyeHeight: number; front: number; halfWidth: number; scale: number; ride: number; offsetZ: number } | null = null;
+  /** Which car's cabin model this car uses in the driver's view, and the one on show now. */
+  private cabinKey: string | null = null;
+  private cabinShown: ReturnType<typeof cabinFor> = null;
+  private kitSecondMat: THREE.Material | null = null;
   private bikeEye: THREE.Object3D | null = null;
 
   /**
@@ -420,9 +425,12 @@ export class KartVisual {
    * quality in every car. The motorbike keeps its own bodywork: you see the tank, bars and screen.
    */
   setFirstPerson(on: boolean): void {
-    if (on === this.firstPerson && this.kitGlassFor === this.kit) return;
+    // A car's own cabin model may arrive a moment after the view is switched; swap to it when it does.
+    const cabin = on && this.cockpitSpec ? cabinFor(this.cabinKey) : null;
+    if (on === this.firstPerson && this.kitGlassFor === this.kit && cabin === this.cabinShown) return;
     this.firstPerson = on;
     this.kitGlassFor = this.kit;
+    this.cabinShown = cabin;
     if (this.cockpit) {
       this.group.remove(this.cockpit.group);
       this.cockpit.dispose();
@@ -435,7 +443,10 @@ export class KartVisual {
         m.needsUpdate = true;
       }
       if (on) {
-        this.cockpit = buildCockpit({ ...this.cockpitSpec, paint: this.kitMats[0] });
+        const tint = new THREE.Color(KART_COLORS[Math.max(0, this.colorIndex) % KART_COLORS.length]);
+        this.cockpit = cabin
+          ? buildCabinCockpit(cabin, { paint: this.kitMats[0], second: this.kitSecondMat ?? carFinish("paint2"), tint, ride: this.cockpitSpec.ride, offsetZ: this.cockpitSpec.offsetZ })
+          : buildCockpit({ ...this.cockpitSpec, paint: this.kitMats[0] });
         this.cockpit.group.scale.setScalar(this.cockpitSpec.scale);
         this.group.add(this.cockpit.group);
         this.eyeNode = this.cockpit.eye;
@@ -668,7 +679,8 @@ export class KartVisual {
     this.kitCar = !!v.car;
     if (v.bike) this.buildBike(kit, v);
     else if (v.car) this.buildCar(kit, v);
-    this.cockpitSpec = v.car && !v.bike ? { eyeHeight: v.car.top * 0.81 + v.car.trim.ride, front: (v.car.lamps?.front ?? 2.33) + v.car.offsetZ, halfWidth: v.car.lamps?.half ?? 1.0, scale: v.scale } : null;
+    this.cockpitSpec = v.car && !v.bike ? { eyeHeight: v.car.top * 0.81 + v.car.trim.ride, front: (v.car.lamps?.front ?? 2.33) + v.car.offsetZ, halfWidth: v.car.lamps?.half ?? 1.0, scale: v.scale, ride: v.car.trim.ride, offsetZ: v.car.offsetZ } : null;
+    this.cabinKey = v.car && !v.bike ? cabinKey(vehicleCar(vehicle)) : null;
     this.eye = v.bike ? [1.5 * v.scale, 0.2] : v.car ? (v.car.lamps ? [(v.car.top * 0.81 + v.car.trim.ride) * v.scale, -0.12 * v.scale] : [(1.03 + v.car.trim.ride) * v.scale, 0.95 * v.scale]) : [1.9, 0.2];
     const { material, tint } = v.car ? { material: null, tint: this.kitTint! } : tintedMaterial(v.material, v.paint);
     this.kitTint = tint;
@@ -801,6 +813,7 @@ export class KartVisual {
       this.kitMats.push(light);
       second = light;
     }
+    this.kitSecondMat = second;
     // Tail lamps are this car's own, so they can flare under braking.
     const tailMat = (carFinish("tail") as THREE.MeshBasicMaterial).clone();
     this.kitTail = tailMat;
@@ -993,7 +1006,7 @@ export class KartVisual {
     if (this.cockpit) {
       // The cabin moves with the car (dive, squat, lean and slide) but is spared spins and stunts.
       this.cockpit.group.rotation.set(this.pitch * 0.8, this.slide * 0.85, this.roll * 0.7);
-      this.cockpit.wheel.rotation.z = this.steer * 1.75;
+      this.cockpit.setSteer(this.steer);
       this.cockpit.setSpeed(Math.abs(speed) * 3.6, (flags & FLAG.BOOST) !== 0);
     }
     const moving = Math.abs(speed) > 1;
@@ -1074,6 +1087,8 @@ export class KartVisual {
   }
 
   dispose(): void {
+    this.cockpit?.dispose();
+    this.cockpit = null;
     this.label.material.map?.dispose();
     this.label.material.dispose();
     this.glow.material.dispose();

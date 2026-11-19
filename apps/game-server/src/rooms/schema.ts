@@ -35,6 +35,8 @@ export class PlayerState extends Schema {
   @type("string") vote = "";
   /** A line about this player's race shown on the results screen. */
   @type("string") note = "";
+  /** A computer-controlled car: driven by the server, and always shown as a CPU. */
+  @type("boolean") cpu = false;
 }
 
 export class AwardState extends Schema {
@@ -57,6 +59,9 @@ export class RaceState extends Schema {
   /** Index into SPEED_CLASSES. */
   @type("uint8") speed = DEFAULT_SPEED_CLASS;
   /** Solo time trial: no power-ups or chaos events; the run goes on the leaderboard. */
+  /** Computer-controlled cars added by the host (none unless asked for) and how hard they drive. */
+  @type("uint8") cpus = 0;
+  @type("uint8") cpuLevel = 1;
   @type("boolean") trial = false;
   @type("boolean") weekly = false;
   /** Current or announced chaos event and the race ticks it runs between. */

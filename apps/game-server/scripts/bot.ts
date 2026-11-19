@@ -1,8 +1,8 @@
 /**
  * A scripted network client used ONLY by the automated tests and the load
  * test. It connects through the real Colyseus protocol exactly like a browser
- * does and drives by sending inputs; it is not part of the game and the game
- * never adds computer-controlled racers.
+ * does and drives by sending inputs; it is not part of the game. (The game's own
+ * computer-controlled cars are a separate, clearly labelled lobby option: see rooms/cpu.ts.)
  */
 import { Client, type Room } from "colyseus.js";
 import {

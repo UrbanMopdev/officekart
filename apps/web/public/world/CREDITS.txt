@@ -54,6 +54,12 @@ Sketchfab under a Creative Commons licence:
       https://sketchfab.com/3d-models/cadillac-coupe-deville-2adc47898c3145078f0b3bc51995cfe9
       CC BY 4.0
 
+  models/cabin_*.glb       The driver's-view cabins are made from the same models as the cars above
+      (concept, corolla, hondae, prius, fortuner, golf), under the same licences and credits.
+      cabin_corolla.glb is likewise CC BY-SA 4.0.
+  models/hand_l.glb, hand_r.glb   "generic-hand" from the WebXR Input Profiles project
+      https://github.com/immersive-web/webxr-input-profiles  (MIT licence, (c) 2019 Amazon)
+
 Licence texts: https://creativecommons.org/licenses/by/4.0/ and
 https://creativecommons.org/licenses/by-sa/4.0/ . Vehicle names, designs and
 badges remain trademarks of their makers; this is an internal, non-commercial game.

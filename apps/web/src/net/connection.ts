@@ -105,6 +105,7 @@ function toView(state: any): RoomView {
       item: p.item ?? 0,
       item2: p.item2 ?? 0,
       item3: p.item3 ?? 0,
+      cpu: p.cpu === true,
       vehicle: p.vehicle ?? 0,
       avatar: p.avatar ?? 0,
       charges: p.charges ?? 0,
@@ -127,6 +128,8 @@ function toView(state: any): RoomView {
     raceNumber: state.raceNumber,
     players,
     chaos: state.chaos ?? 0,
+    cpus: state.cpus ?? 0,
+    cpuLevel: state.cpuLevel ?? 1,
     speed: state.speed ?? 0,
     trial: state.trial === true,
     weekly: state.weekly === true,
@@ -170,12 +173,12 @@ class Net {
   startPreview(trackId: string, at: number): void {
     const track = getTrack(trackId);
     const players: PlayerView[] = ["You", "Priya", "Marcus", "Jo", "Sam", "Ines"].map((name, i) => ({
-      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, item2: 0, item3: 0, charges: 1, vehicle: (PREVIEW_VEH + i) % VEHICLES.length, avatar: i, wins: 0, points: 0, vote: "", note: "",
+      id: `p${i}`, name, color: [0, 1, 3, 4, 6, 5][i], slot: i, ready: true, connected: true, racing: true, lap: 1, place: 6 - i, finished: false, finishMs: 0, bestLapMs: 0, item: i === 0 ? 3 : 0, item2: 0, item3: 0, charges: 1, vehicle: (PREVIEW_VEH + i) % VEHICLES.length, avatar: i, wins: 0, points: 0, vote: "", note: "", cpu: false,
     }));
     useStore.getState().set({
       status: "connected",
       myId: "p0",
-      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players, chaos: 0, speed: 0, trial: false, weekly: false, eventId: 0, eventFrom: 0, eventTo: 0, hzOff: 0, voteEndsAt: 0, awards: [] },
+      room: { code: "PREVIEW", phase: "racing", hostId: "p0", trackId: track.def.id, laps: 3, raceStartAt: Date.now() - 20_000, raceNumber: 1, players, chaos: 0, speed: 0, cpus: 0, cpuLevel: 1, trial: false, weekly: false, eventId: 0, eventFrom: 0, eventTo: 0, hzOff: 0, voteEndsAt: 0, awards: [] },
     });
     // ?results=trial shows the time-trial results screen with sample numbers, to check its layout.
     if (new URLSearchParams(location.search).get("results") === "trial") {

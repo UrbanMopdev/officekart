@@ -7,6 +7,9 @@
  */
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { shade, type Cabin } from "./cabins";
+import { buildHands, loadHands, type DriverHands } from "./hands";
+import { roadWet } from "./materials";
 
 export interface CockpitSpec {
   /** Driver's eye height above the road, and how far ahead of the car's centre the nose is. */
@@ -20,7 +23,8 @@ export interface Cockpit {
   group: THREE.Group;
   /** The driver's eyes; the camera sits here. */
   eye: THREE.Object3D;
-  wheel: THREE.Group;
+  /** Turn the steering wheel: -1 is full left, 1 is full right. */
+  setSteer(steer: number): void;
   setSpeed(kmh: number, boost: boolean): void;
   /** Give the mirror a picture of the road behind, or null to go back to plain glass. */
   setRearView(texture: THREE.Texture | null): void;
@@ -207,7 +211,9 @@ export function buildCockpit(spec: CockpitSpec): Cockpit {
   return {
     group,
     eye,
-    wheel,
+    setSteer(steer) {
+      wheel.rotation.z = steer * 1.75;
+    },
     setSpeed,
     setRearView(texture) {
       if (texture && rearView.map !== texture) {
@@ -225,5 +231,290 @@ export function buildCockpit(spec: CockpitSpec): Cockpit {
       });
       screenTex.dispose();
     },
+  };
+}
+
+
+/** Raindrops for glass: beads in the red channel, larger drops with short tails in the green. Tiles. */
+function dropsTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, size, size);
+  ctx.globalCompositeOperation = "lighter";
+  let seed = 7;
+  const rnd = (): number => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  const dot = (x: number, y: number, r: number, colour: string): void => {
+    // Drawn at each wrap position so the texture has no seams.
+    for (const ox of [-size, 0, size])
+      for (const oy of [-size, 0, size]) {
+        const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+        g.addColorStop(0, colour);
+        g.addColorStop(0.55, colour);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+      }
+  };
+  for (let i = 0; i < 170; i++) dot(rnd() * size, rnd() * size, 1.2 + rnd() * rnd() * 4.5, "rgb(255,0,0)");
+  for (let i = 0; i < 26; i++) {
+    const x = rnd() * size;
+    const y = rnd() * size;
+    const r = 2.5 + rnd() * 3;
+    dot(x, y, r, "rgb(0,255,0)");
+    for (let t = 1; t < 7; t++) dot(x + (rnd() - 0.5) * 1.5, y - t * r * 0.9, r * (0.7 - t * 0.08), "rgb(0,90,0)");
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+/**
+ * The concept car's instrument panel, redrawn live in the layout its designers gave it: fuel, engine
+ * speed and throttle as stacks of bars, the speed in large figures, temperature on the right. Drawn
+ * in white; the panel's own material gives it its amber glow.
+ */
+function panelScreen(): { texture: THREE.CanvasTexture; set(kmh: number, boost: boolean): void } {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.flipY = false;
+  let shown = -1;
+  const stack = (x: number, w: number, lit: number, label: string): void => {
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, 30, w, 172);
+    for (let i = 0; i < 9; i++) {
+      const y = 182 - i * 18.5;
+      if (i < lit) {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(x + 8, y, w - 16, 12);
+      } else {
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x + 8, y, w - 16, 12);
+      }
+    }
+    ctx.fillStyle = "#fff";
+    ctx.font = "600 17px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(label, x + w / 2, 228);
+  };
+  const set = (kmh: number, boost: boolean): void => {
+    const speed = Math.round(kmh);
+    const rev = Math.min(1, 0.22 + ((kmh % 38) / 38) * 0.78);
+    const key = speed * 40 + Math.round(rev * 9) * 2 + (boost ? 1 : 0);
+    if (key === shown) return;
+    shown = key;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, 1024, 256);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(165, 18);
+    ctx.lineTo(860, 18);
+    ctx.quadraticCurveTo(880, 20, 892, 40);
+    ctx.lineTo(985, 220);
+    ctx.quadraticCurveTo(990, 238, 970, 238);
+    ctx.lineTo(55, 238);
+    ctx.quadraticCurveTo(34, 238, 40, 220);
+    ctx.lineTo(132, 40);
+    ctx.quadraticCurveTo(142, 20, 165, 18);
+    ctx.stroke();
+    stack(168, 72, 8, "fuel");
+    stack(254, 76, Math.round(rev * 9), "engine RPM");
+    stack(344, 76, boost ? 9 : Math.min(9, Math.round((kmh / 150) * 7)), "power");
+    stack(818, 52, 5, "temp");
+    ctx.fillStyle = "#fff";
+    ctx.font = "700 150px ui-monospace, Menlo, Consolas, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(String(speed), 600, 172);
+    ctx.font = "600 22px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillText("speed km/h", 600, 222);
+    texture.needsUpdate = true;
+  };
+  set(0, false);
+  return { texture, set };
+}
+
+export interface CabinFit {
+  paint: THREE.Material;
+  second: THREE.Material;
+  /** The player's colour, for the upholstery accents of cars that have them. */
+  tint: THREE.Color;
+  /** Where the car's shell sits on the kart: ride height and shift along the car. */
+  ride: number;
+  offsetZ: number;
+}
+
+/**
+ * The driver's view from a real cabin model: the car's own dashboard, wheel, seats and pillars, with
+ * its bodywork in the player's paint. Parts stay shared with the loaded model, which is used by one
+ * car at a time (your own).
+ */
+export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
+  // A cabin serves one car at a time; if an earlier car was never told to let go of it, do that now.
+  cabin.release?.();
+  const group = new THREE.Group();
+  const shell = new THREE.Group();
+  shell.position.set(0, fit.ride, fit.offsetZ);
+  shell.add(cabin.scene);
+  group.add(shell);
+
+  for (const m of cabin.paint) m.material = fit.paint;
+  for (const m of cabin.paint2) m.material = fit.second;
+  // Glass seen from inside: almost clear, with a faint sheen that picks up the sky.
+  const glass = new THREE.MeshPhysicalMaterial({ color: "#9fb0bb", transparent: true, opacity: 0.045, roughness: 0.03, metalness: 0, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 0.7 });
+  // In the rain, drops bead on the glass and run slowly down it.
+  const drops = dropsTexture();
+  const dropTime = { value: 0 };
+  // Two wiper blades sweep the windscreen while it rains: drawn on the glass itself, clearing the drops
+  // in their arcs, which then bead up again until the next pass.
+  const sc = cabin.screen;
+  const width = Math.max(0.8, sc.left - sc.right);
+  const wipe = {
+    uWipeA: { value: new THREE.Vector2(sc.left - width * 0.1, sc.low) },
+    uWipeB: { value: new THREE.Vector2(sc.left - width * 0.56, sc.low) },
+    uWipeLen: { value: width * 0.47 },
+    uWipeFrom: { value: sc.from },
+  };
+  glass.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, { uWet: roadWet, tDrops: { value: drops }, uDropTime: dropTime }, wipe);
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute vec3 cabinPos; varying vec3 vCab;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvCab = cabinPos;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform float uWet; uniform sampler2D tDrops; uniform float uDropTime; varying vec3 vCab;
+        uniform vec2 uWipeA; uniform vec2 uWipeB; uniform float uWipeLen; uniform float uWipeFrom;
+        // One blade: x = how much of the rain it has cleared here (1 just wiped, 0 not reached), y = the blade itself.
+        vec2 wiper(vec2 pivot, float phase) {
+          // The screen is raked, so its height is foreshortened seen from the front; undo that for a round sweep.
+          vec2 d = vec2(vCab.x - pivot.x, (vCab.y - pivot.y) / 0.62);
+          float r = length(d);
+          if (r > uWipeLen || r < 0.05 || d.y < -0.01) return vec2(0.0);
+          // Blades park pointing across the car (towards -x) and sweep up and over.
+          const float park = 3.02; const float top = 1.12;
+          float u = (park - atan(d.y, d.x)) / (park - top);
+          if (u < 0.0 || u > 1.0) return vec2(0.0);
+          float at = 0.5 - 0.5 * cos(phase);
+          float pass = acos(clamp(1.0 - 2.0 * u, -1.0, 1.0));
+          float since = min(mod(phase - pass, 6.2832), mod(phase + pass, 6.2832)) / 4.6;
+          float blade = 1.0 - smoothstep(0.006, 0.011, abs(u - at) * (park - top) * r);
+          return vec2(1.0 - smoothstep(0.0, 1.9, since), blade);
+        }`,
+      )
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        if (uWet > 0.01) {
+          vec2 at = vCab.xy * 2.7 + vec2(vCab.z * 1.3, vCab.z * 0.4);
+          float beads = texture2D(tDrops, at).r;
+          float runs = texture2D(tDrops, at * 0.62 + vec2(0.0, uDropTime * 0.045)).g;
+          float drop = max(beads, runs) * uWet;
+          float film = uWet * 0.03;
+          if (vCab.z > uWipeFrom && uWet > 0.3) {
+            float phase = uDropTime * 4.6;
+            vec2 w = max(wiper(uWipeA, phase), wiper(uWipeB, phase));
+            drop *= 1.0 - w.x * 0.92;
+            film *= 1.0 - w.x;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.012), w.y);
+            diffuseColor.a = max(diffuseColor.a, w.y * 0.96);
+          }
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.82, 0.88, 0.95), drop);
+          diffuseColor.a = min(1.0, diffuseColor.a + drop * 0.5 + film);
+        }`,
+      );
+  };
+  glass.customProgramCacheKey = () => "cabin-glass-rain-2";
+  for (const m of cabin.glass) {
+    m.material = glass;
+    m.renderOrder = 5;
+  }
+  // Upholstery accents take a deep version of the player's colour.
+  const accents: THREE.MeshStandardMaterial[] = [];
+  for (const m of cabin.accent) {
+    const mat = m.material as THREE.MeshStandardMaterial;
+    if (!accents.includes(mat)) accents.push(mat);
+  }
+  for (const a of accents) a.color.copy(fit.tint).multiplyScalar(0.55).lerp(new THREE.Color("#1a1512"), 0.35);
+
+  const disposables: { dispose(): void }[] = [glass, drops];
+  let setSpeed: Cockpit["setSpeed"] = () => {};
+  if (cabin.panel && cabin.spec.livePanel) {
+    const panel = panelScreen();
+    cabin.panel.emissiveMap = panel.texture;
+    cabin.panel.needsUpdate = true;
+    setSpeed = panel.set;
+    disposables.push(panel.texture);
+  } else if (cabin.spec.readout) {
+    const r = cabin.spec.readout;
+    const dial = speedScreen(r.size[0], r.size[1]);
+    dial.mesh.position.set(r.at[0], r.at[1], r.at[2]);
+    dial.mesh.rotation.set(r.tilt, Math.PI + (r.yaw ?? 0), 0, "YXZ");
+    shell.add(dial.mesh);
+    setSpeed = dial.set;
+    disposables.push(dial.texture, dial.mesh.geometry, dial.mesh.material as THREE.Material);
+  }
+
+  // Mirrors show the road behind when the game supplies the picture, and the sky otherwise.
+  const rearView = new THREE.MeshBasicMaterial({ color: "#c9ccd0", toneMapped: false });
+  disposables.push(rearView);
+  const mirrorHome = cabin.mirrors.map((m) => m.material);
+
+  const eye = new THREE.Object3D();
+  eye.position.set(cabin.spec.eye[0], cabin.spec.eye[1], cabin.spec.eye[2]);
+  shell.add(eye);
+
+  // The driver's hands: gloves on the rim, sleeves in a deep shade of the player's colour.
+  const glove = new THREE.MeshStandardMaterial({ color: "#17181b", roughness: 0.72 });
+  const sleeve = new THREE.MeshStandardMaterial({ color: fit.tint.clone().multiplyScalar(0.3).lerp(new THREE.Color("#141416"), 0.35), roughness: 0.9 });
+  shade(glove);
+  shade(sleeve);
+  disposables.push(glove, sleeve);
+  let hands: DriverHands | null = null;
+  void loadHands();
+
+  const dispose = (): void => {
+    if (cabin.release !== dispose) return;
+    cabin.release = null;
+    cabin.mirrors.forEach((m, i) => (m.material = mirrorHome[i]));
+    hands?.remove();
+    if (cabin.spin) cabin.spin.rotation.z = 0;
+    if (cabin.panel) cabin.panel.emissiveMap = null;
+    shell.remove(cabin.scene);
+    for (const d of disposables) d.dispose();
+  };
+  cabin.release = dispose;
+
+  return {
+    group,
+    eye,
+    setSteer(steer) {
+      if (!cabin.spin) return;
+      // The wheel's axis points at the driver, so a turn to the right is a negative angle about it.
+      cabin.spin.rotation.z = -steer * 0.95;
+      hands ??= buildHands(cabin.spin, shell, cabin.wheelRadius, eye.position, glove, sleeve);
+      hands?.update(cabin.spin.rotation.z);
+    },
+    setSpeed(kmh, boost) {
+      dropTime.value = performance.now() / 1000;
+      setSpeed(kmh, boost);
+    },
+    setRearView(texture) {
+      if (!cabin.mirrorsMapped) return;
+      if (texture && rearView.map !== texture) {
+        rearView.map = texture;
+        rearView.needsUpdate = true;
+      }
+      cabin.mirrors.forEach((m, i) => (m.material = texture ? rearView : mirrorHome[i]));
+    },
+    dispose,
   };
 }

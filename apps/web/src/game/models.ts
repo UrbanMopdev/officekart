@@ -71,6 +71,8 @@ export interface CarKit {
 
 /** Order matches VEHICLES: which model each vehicle uses. The motorbike (1) is built in code. */
 const VEHICLE_CAR: (string | null)[] = ["concept", null, "concept", "fortuner", "concept", "corolla", "hondae", "prius", "golf", "delorean", "datsun", "cadillac"];
+/** The car model a vehicle uses, or null for the motorbike. */
+export const vehicleCar = (vehicle: number): string | null => VEHICLE_CAR[vehicle] ?? null;
 /** Everyday cars keep their factory trim: a plain glossy respray in the player's colour. */
 const STOCK: CarTrim = { scale: 0.86, metalness: 0.45, roughness: 0.3, clearcoat: 1, second: "carbon", wing: false, ride: 0 };
 /** A few cars are known for their finish: brushed stainless steel, or deep seventies lacquer. */

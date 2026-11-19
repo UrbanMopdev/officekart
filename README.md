@@ -138,12 +138,26 @@ wing) differ in finish. The Motorbike is built in code from smooth solids on the
 in leathers. Cars are closed, so the driver choice is not visible in them.
 
 **Views.** C (or the button under the ping badge) switches between the chase camera and the driver's
-seat. In first person a car's outside is swapped for a built interior (`apps/web/src/game/cockpit.ts`):
-dashboard, instrument screen with live speed and gear, a steering wheel that follows the steering, pillars,
-mirrors and the bonnet in the car's paint, sized to each car. The camera is fixed to the car, so it pitches
-on hills, leans on banking and slides with the tail, with a little head turn into corners and a surface
-buzz that is rougher off the tarmac; spins and stunts are not passed on to the camera. The motorbike keeps
-its own bodywork. The choice is saved with the other settings.
+seat. In first person you sit in the car's real cabin: the dashboard, steering wheel, seats, door cards,
+pillars and mirrors of that car's own model, with its bodywork in your paint (`apps/web/src/game/cabins.ts`).
+The Corolla, Prius, Honda e, Fortuner, Golf and the concept car each have their own; the DeLorean, Datsun
+and Cadillac models have no interior, so they borrow the Golf's period cabin. The driver's gloved hands are
+on the wheel and turn with it, with sleeves in your colour (`hands.ts`). The concept car's instrument panel
+is redrawn live; the Corolla and Golf carry a small live speed readout; the mirrors show the road behind.
+Cabins are fetched the first time you sit in that car (0.3 to 4 MB each); until one arrives the older
+built interior (`cockpit.ts`) stands in. The camera is fixed to the car, so it pitches on hills, leans on
+banking and slides with the tail, with a little head turn into corners and a surface buzz that is rougher
+off the tarmac; spins and stunts are not passed on to the camera. The motorbike keeps its own bodywork.
+The choice is saved with the other settings.
+
+**CPU opponents.** The host can add up to seven computer-controlled cars in the lobby (none by default)
+and choose how hard they drive: Gentle, Fair or Fierce. They are always marked as CPU: in their names, in
+the lobby list and on their name tags. The server drives them (`apps/game-server/src/rooms/cpu.ts`)
+through the same inputs and physics as everyone else: they follow the road on their own line, the better
+ones power-slide for the boost, they pick up and use power-ups, time their launch, and ask to be put back
+on the road when stuck. One that drops well behind the people in the race pushes a little harder, and one
+that is clear of everyone eases off. They give up their seat when a person joins a full lobby, never
+appear in time trials, and do not vote on the next track.
 
 **Lap delta.** `apps/web/src/game/delta.ts` times twenty splits round each lap and shows, under the
 best-lap line, how far ahead or behind your own best lap you are (green ahead, red behind). Best laps are
@@ -278,8 +292,9 @@ SERVER_URL=wss://<your-game-server-domain> npm run test:race -w @office-kart/gam
 SERVER_URL=wss://<your-game-server-domain> npm run test:load -w @office-kart/game-server
 ```
 
-The scripted clients in `apps/game-server/scripts` exist only for these tests. The game itself never adds
-computer-controlled racers.
+The scripted clients in `apps/game-server/scripts` exist only for these tests. They are separate from the
+game's own CPU opponents, which the host adds in the lobby and which are always labelled as CPU.
+`npm run test:cpu -w @office-kart/game-server` races three of them round every circuit.
 
 ## Deploy to Railway
 

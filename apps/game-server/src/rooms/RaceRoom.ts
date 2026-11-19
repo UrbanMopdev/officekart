@@ -10,6 +10,7 @@ import {
   FINISH_GRACE_MS,
   FLAG,
   KART_COLORS,
+  MAX_CPUS,
   MAX_LAPS,
   MAX_PLAYERS,
   MAX_RACE_MS,
@@ -49,6 +50,7 @@ import {
   type TrialResult,
 } from "@office-kart/shared";
 import { CHAOS_PACE, ItemWorld, pickEvent, rollItem } from "./items";
+import { CPU_NAMES, cpuDrive, newMind, type CpuMind } from "./cpu";
 import { activeRoomCount, releaseCode, reserveCode } from "../util/codes";
 import { errorFields, log } from "../util/log";
 import { recordTick } from "../util/metrics";
@@ -107,6 +109,8 @@ interface Racer {
   /** Time trials: the run, sampled every three ticks, for the leaderboard ghost. */
   ghost: number[];
   stats: { peak: number; driftBoosts: number; airTicks: number; hazardHits: number; itemHits: number; tricks: number; drafts: number };
+  /** Set for a computer-controlled car: what decides its inputs. */
+  cpu: CpuMind | null;
 }
 
 interface ClientMeta {
@@ -131,6 +135,8 @@ function newMeta(): ClientMeta {
 
 /** How many power-ups a racer can carry in reserve behind the one in hand. */
 const BAG_SIZE = 2;
+/** Vehicles a computer-controlled car may be given: all the cars, not the motorbike. */
+const CPU_VEHICLES = VEHICLES.map((_, i) => i).filter((i) => i !== 1);
 
 export class RaceRoom extends Room<RaceState> {
   /** Set on SIGTERM: no new rooms are created and no new races start. */
@@ -224,7 +230,7 @@ export class RaceRoom extends Room<RaceState> {
       this.checkVotes();
     });
 
-    this.on(MSG.SETTINGS, (client, _player, payload: { laps?: unknown; trackId?: unknown; chaos?: unknown; speed?: unknown }) => {
+    this.on(MSG.SETTINGS, (client, _player, payload: { laps?: unknown; trackId?: unknown; chaos?: unknown; speed?: unknown; cpus?: unknown; cpuLevel?: unknown }) => {
       if (!this.isHost(client) || this.state.phase !== "lobby") return;
       // The weekly challenge is the same for everyone; a time trial always runs its own laps with no chaos.
       if (this.state.weekly) return;
@@ -241,6 +247,14 @@ export class RaceRoom extends Room<RaceState> {
       if (!trial && typeof chaos === "number" && Number.isInteger(chaos) && chaos >= 0 && chaos <= 2) this.state.chaos = chaos;
       const speed = payload?.speed;
       if (typeof speed === "number" && Number.isInteger(speed) && speed >= 0 && speed < SPEED_CLASSES.length) this.state.speed = speed;
+      // Computer-controlled cars: only ever added because the host asked for them, never in a time trial.
+      const cpus = payload?.cpus;
+      if (!trial && typeof cpus === "number" && Number.isInteger(cpus) && cpus >= 0 && cpus <= MAX_CPUS) {
+        this.state.cpus = cpus;
+        this.syncCpus(0);
+      }
+      const cpuLevel = payload?.cpuLevel;
+      if (!trial && typeof cpuLevel === "number" && Number.isInteger(cpuLevel) && cpuLevel >= 0 && cpuLevel <= 2) this.state.cpuLevel = cpuLevel;
     });
 
     // Rocket starts: the server times the press itself, so the client's clock is never trusted.
@@ -292,6 +306,8 @@ export class RaceRoom extends Room<RaceState> {
       throw new ServerError(409, "A race is in progress. Try again when it finishes.");
     }
 
+    // A person always gets a seat ahead of a computer-controlled car.
+    this.syncCpus(1);
     const meta = newMeta();
     if (typeof options?.pid === "string" && /^[a-z0-9-]{8,40}$/.test(options.pid)) meta.pid = options.pid;
     client.userData = meta;
@@ -423,12 +439,45 @@ export class RaceRoom extends Room<RaceState> {
     return 0;
   }
 
+  /**
+   * Bring the number of computer-controlled cars in line with the host's setting, leaving `spare`
+   * seats free for people. They are added and removed only between races.
+   */
+  private syncCpus(spare: number): void {
+    const st = this.state;
+    if (st.phase === "countdown" || st.phase === "racing") return;
+    const cpus = [...st.players.values()].filter((p) => p.cpu);
+    const people = st.players.size - cpus.length;
+    const want = st.trial ? 0 : Math.max(0, Math.min(st.cpus, MAX_PLAYERS - people - spare));
+    for (let i = cpus.length - 1; i >= want; i--) {
+      st.players.delete(cpus[i].id);
+      this.racers.delete(cpus[i].id);
+    }
+    for (let i = cpus.length; i < want; i++) {
+      const p = new PlayerState();
+      let n = 1;
+      while (st.players.has(`cpu-${n}`)) n++;
+      p.id = `cpu-${n}`;
+      p.cpu = true;
+      p.name = this.uniqueName(CPU_NAMES[(n - 1) % CPU_NAMES.length]);
+      p.slot = this.freeSlot();
+      p.color = this.pickColor(undefined);
+      // Cars only: every one of them has a cabin and four wheels.
+      p.vehicle = CPU_VEHICLES[Math.floor(Math.random() * CPU_VEHICLES.length)];
+      p.avatar = Math.floor(Math.random() * AVATARS.length);
+      p.ready = true;
+      st.players.set(p.id, p);
+    }
+    if (want !== cpus.length) this.order = [...this.racers.values()];
+  }
+
   private removePlayer(id: string): void {
     this.state.players.delete(id);
     if (this.racers.delete(id)) this.order = [...this.racers.values()];
     if (this.state.hostId === id) {
       let next: PlayerState | undefined;
       for (const p of this.state.players.values()) {
+        if (p.cpu) continue;
         if (!next || (p.connected && !next.connected) || (p.connected === next.connected && p.slot < next.slot)) next = p;
       }
       this.state.hostId = next ? next.id : "";
@@ -498,6 +547,7 @@ export class RaceRoom extends Room<RaceState> {
         cpCount: 0,
         lapStartMs: 0,
         finished: false,
+        cpu: p.cpu ? newMind(st.cpuLevel, p.slot) : null,
       });
       p.racing = true;
       p.lap = 1;
@@ -525,6 +575,13 @@ export class RaceRoom extends Room<RaceState> {
     this.scheduleEvent(8);
     st.raceNumber++;
     st.raceStartAt = Date.now() + COUNTDOWN_MS;
+    // Computer-controlled cars time their launch like anyone else: the better ones more often get it right.
+    for (const r of this.order) {
+      if (!r.cpu) continue;
+      const roll = Math.random() + (st.cpuLevel - 1) * 0.2;
+      const held = roll > 0.85 ? (ROCKET.late + ROCKET.perfect) / 2 : roll > 0.45 ? (ROCKET.perfect + ROCKET.good) / 2 : -1;
+      r.revAt = held > 0 ? st.raceStartAt - held : 0;
+    }
     st.phase = "countdown";
     void this.lock();
     this.nextCountdownSnapshot = Date.now() + 250;
@@ -535,18 +592,19 @@ export class RaceRoom extends Room<RaceState> {
   private toLobby(): void {
     for (const p of this.state.players.values()) {
       p.racing = false;
-      p.ready = false;
+      p.ready = p.cpu;
     }
     this.racers.clear();
     this.order = [];
     this.state.phase = "lobby";
+    this.syncCpus(0);
   }
 
   private endRace(): void {
     const st = this.state;
     this.updatePlaces();
     st.phase = "results";
-    for (const p of st.players.values()) p.ready = false;
+    for (const p of st.players.values()) p.ready = p.cpu;
     void this.unlock();
     st.eventId = 0;
     if (st.trial) this.scoreTrial();
@@ -630,6 +688,12 @@ export class RaceRoom extends Room<RaceState> {
         r.input.steer = 0;
         r.input.drift = false;
         r.input.reset = false;
+        this.simulate(r, raceMs);
+        continue;
+      }
+      if (r.cpu) {
+        // A computer-controlled car: its inputs are decided here, then it runs through the same physics.
+        cpuDrive(r.cpu, r.kart, this.track, this.ctx.speed, r.input, this.raceTick, r.item, this.cpuBias(r), this.cpuDodge(r));
         this.simulate(r, raceMs);
         continue;
       }
@@ -752,11 +816,63 @@ export class RaceRoom extends Room<RaceState> {
 
     // End conditions.
     let racing = 0;
-    for (const r of order) if (!r.finished) racing++;
+    let people = 0;
+    for (const r of order) {
+      if (r.finished) continue;
+      racing++;
+      if (!r.cpu) people++;
+    }
+    // Once every person is home there is no need to wait long for the computer-controlled cars.
+    if (people === 0 && racing > 0 && order.some((r) => !r.cpu) && (this.finishDeadlineMs === 0 || this.finishDeadlineMs > raceMs + 4000)) this.finishDeadlineMs = raceMs + 4000;
     if (racing === 0 || (this.finishDeadlineMs > 0 && raceMs >= this.finishDeadlineMs) || raceMs >= MAX_RACE_MS) {
       this.sendSnapshot();
       this.endRace();
     }
+  }
+
+  /**
+   * Keeps computer-controlled cars in the race with the people: one that has dropped well behind
+   * every person pushes a little harder, one that is clear of them all eases off a little.
+   */
+  private cpuBias(r: Racer): number {
+    let first = -Infinity;
+    let last = Infinity;
+    for (const o of this.order) {
+      if (o.cpu || o.finished) continue;
+      first = Math.max(first, o.travel);
+      last = Math.min(last, o.travel);
+    }
+    if (first === -Infinity) return 0;
+    const ahead = (r.travel - first) * this.track.spacing;
+    const behind = (last - r.travel) * this.track.spacing;
+    if (ahead > 30) return -Math.min(0.09, (ahead - 30) * 0.002);
+    if (behind > 40) return Math.min(0.05, (behind - 40) * 0.001);
+    return 0;
+  }
+
+  /**
+   * A slower car close ahead on the same line: which way a computer-controlled car should pull out
+   * to go round it rather than push it along. Metres to the right; 0 when the road ahead is clear.
+   */
+  private cpuDodge(r: Racer): number {
+    const k = r.kart;
+    const fx = Math.sin(k.heading);
+    const fz = Math.cos(k.heading);
+    let nearest = 12;
+    let dodge = 0;
+    for (const o of this.order) {
+      if (o === r || o.finished || o.kart.phantom > 0) continue;
+      const dx = o.kart.x - k.x;
+      const dz = o.kart.z - k.z;
+      const along = dx * fx + dz * fz;
+      if (along <= 0.5 || along >= nearest || Math.abs(o.kart.y - k.y) > 3) continue;
+      // Which side of this car it is on, measured along the road's own "right" direction.
+      const side = dx * this.track.nx[k.idx] + dz * this.track.nz[k.idx];
+      if (Math.abs(side) > 2.1 || o.kart.speed > k.speed + 1.5) continue;
+      nearest = along;
+      dodge = side > 0 ? -2.6 : 2.6;
+    }
+    return dodge;
   }
 
   private simulate(r: Racer, raceMs: number): void {
@@ -1004,7 +1120,7 @@ export class RaceRoom extends Room<RaceState> {
   /** Once everyone connected has voted, the most popular choice starts the next race. */
   private checkVotes(): void {
     const st = this.state;
-    const voters = [...st.players.values()].filter((p) => p.connected);
+    const voters = [...st.players.values()].filter((p) => p.connected && !p.cpu);
     if (voters.length === 0 || voters.some((p) => p.vote === "")) return;
     if (st.voteEndsAt > 0) return;
     st.voteEndsAt = Date.now() + 3000;
@@ -1012,7 +1128,7 @@ export class RaceRoom extends Room<RaceState> {
     this.voteTimer = setTimeout(() => {
       if (this.state.phase !== "results") return;
       const tally: Record<string, number> = { same: 0, random: 0, harder: 0, mayhem: 0 };
-      for (const p of this.state.players.values()) if (p.connected && p.vote in tally) tally[p.vote]++;
+      for (const p of this.state.players.values()) if (p.connected && !p.cpu && p.vote in tally) tally[p.vote]++;
       const choice = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0];
       const ids = Object.keys(TRACK_DEFS);
       if (choice === "random") {

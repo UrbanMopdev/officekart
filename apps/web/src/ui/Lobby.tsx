@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AVATARS, CHAOS_LEVELS, KART, KART_COLORS, SPEED_CLASSES, MAX_LAPS, MAX_PLAYERS, MIN_LAPS, MSG, SURFACE_TYPES, TRACK_DEFS, VEHICLES, getTrack } from "@office-kart/shared";
+import { AVATARS, CHAOS_LEVELS, CPU_LEVELS, KART, KART_COLORS, SPEED_CLASSES, MAX_CPUS, MAX_LAPS, MAX_PLAYERS, MIN_LAPS, MSG, SURFACE_TYPES, TRACK_DEFS, VEHICLES, getTrack } from "@office-kart/shared";
 import { net } from "../net/connection";
 import { useMe, useStore, type Quality } from "../store";
 import { BoardPanel } from "./Leaderboard";
@@ -135,6 +135,8 @@ export function Lobby() {
                     <span className="rounded-full bg-rose-500/25 px-2.5 py-0.5 text-xs font-bold text-rose-200">Reconnecting…</span>
                   ) : p.id === room.hostId ? (
                     <span className="rounded-full bg-amber-400/25 px-2.5 py-0.5 text-xs font-bold text-amber-200">Host</span>
+                  ) : p.cpu ? (
+                    <span className="rounded-full bg-sky-400/20 px-2.5 py-0.5 text-xs font-bold text-sky-200">CPU</span>
                   ) : p.ready ? (
                     <span className="rounded-full bg-emerald-400/25 px-2.5 py-0.5 text-xs font-bold text-emerald-200">Ready</span>
                   ) : (
@@ -285,6 +287,39 @@ export function Lobby() {
               <div className="-mt-1 text-right text-xs text-white/50">
                 {SPEED_CLASSES[room.speed]?.tag} · top speed {Math.round(KART.maxSpeed * (SPEED_CLASSES[room.speed]?.k ?? 1) * 3.6)} km/h
               </div>
+              {!room.trial && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-white/60">
+                    CPU opponents
+                    <span className="block text-[11px] font-normal text-white/40">Computer-driven cars, marked CPU</span>
+                  </dt>
+                  <dd className="flex items-center gap-2 font-bold">
+                    {isHost && (
+                      <button type="button" aria-label="Fewer CPU opponents" disabled={room.cpus <= 0} onClick={() => net.send(MSG.SETTINGS, { cpus: room.cpus - 1 })} className="h-8 w-8 rounded-lg bg-white/10 text-lg hover:bg-white/20 disabled:opacity-30">
+                        −
+                      </button>
+                    )}
+                    <span className="w-6 text-center text-lg">{room.cpus}</span>
+                    {isHost && (
+                      <button type="button" aria-label="More CPU opponents" disabled={room.cpus >= MAX_CPUS || room.players.length >= MAX_PLAYERS} onClick={() => net.send(MSG.SETTINGS, { cpus: room.cpus + 1 })} className="h-8 w-8 rounded-lg bg-white/10 text-lg hover:bg-white/20 disabled:opacity-30">
+                        +
+                      </button>
+                    )}
+                  </dd>
+                </div>
+              )}
+              {!room.trial && room.cpus > 0 && (
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-white/60">CPU skill</dt>
+                  <dd className="flex gap-1 rounded-xl bg-white/5 p-1">
+                    {CPU_LEVELS.map((label, i) => (
+                      <button key={label} type="button" disabled={!isHost} aria-pressed={room.cpuLevel === i} onClick={() => net.send(MSG.SETTINGS, { cpuLevel: i })} className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${room.cpuLevel === i ? (i === 2 ? "bg-rose-500 text-white" : "bg-amber-400 text-slate-900") : "text-white/70"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </dd>
+                </div>
+              )}
               {!room.trial && (
                 <div className="flex items-center justify-between">
                   <dt className="text-white/60">Laps</dt>

@@ -130,6 +130,8 @@ export interface PlayerView {
   points: number;
   vote: string;
   note: string;
+  /** A computer-controlled car, not a person. */
+  cpu: boolean;
 }
 
 export interface RoomView {
@@ -144,6 +146,9 @@ export interface RoomView {
   chaos: number;
   /** Index into SPEED_CLASSES. */
   speed: number;
+  /** How many computer-controlled cars the host has added, and how hard they drive (index into CPU_LEVELS). */
+  cpus: number;
+  cpuLevel: number;
   /** Solo time trial: no power-ups or chaos events, and the run is scored on the leaderboard. */
   trial: boolean;
   /** The trial is this week's challenge, so its settings are fixed. */

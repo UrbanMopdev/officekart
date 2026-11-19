@@ -105,9 +105,11 @@ export function World({ quality }: { quality: Quality }) {
   const sunRef = useRef<THREE.DirectionalLight>(null);
   const fillA = useRef<THREE.PointLight>(null);
   const fillB = useRef<THREE.PointLight>(null);
+  const cabinGlow = useRef<THREE.PointLight>(null);
+  const beam = useRef<THREE.SpotLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
   const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean ; champ: Ghost | null; champVisual: KartVisual | null; champLook: { name: string; color: number; vehicle: number; avatar: number } | null }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, champ: null, champVisual: null, champLook: null });
-  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true, interior: null as Cockpit | null, mirrorTick: 0, delta: null as LapDelta | null, deltaFor: null as unknown });
+  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true, interior: null as Cockpit | null, mirrorTick: 0, delta: null as LapDelta | null, deltaFor: null as unknown, gLong: 0, gLat: 0, lastSpeed: 0, lastHeading: 0 });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
   const fogHome = useRef<{ color: THREE.Color; near: number; far: number } | null>(null);
@@ -578,7 +580,26 @@ export function World({ quality }: { quality: Quality }) {
         c.eyeNode.getWorldQuaternion(FP_QUAT);
         const steerNow = Math.max(-1, Math.min(1, c.steer));
         c.look += (steerNow * 0.2 - c.look) * (1 - Math.exp(-dt * 4));
-        FP_EULER.set(-0.03, Math.PI - c.look, 0, "YXZ");
+        // The driver's head is not bolted to the car: it is thrown forward under braking, pressed back
+        // under power and pulled to the outside of a corner, a few centimetres each way.
+        if (c.fpFresh) c.gLong = c.gLat = 0;
+        else if (dt > 0) {
+          const along = Math.max(-28, Math.min(28, (focus.speed - c.lastSpeed) / dt));
+          const across = Math.max(-28, Math.min(28, (angleDiff(focus.heading, c.lastHeading) / dt) * focus.speed));
+          const ease = 1 - Math.exp(-dt * 5);
+          c.gLong += (along - c.gLong) * ease;
+          c.gLat += (across - c.gLat) * ease;
+        }
+        c.lastSpeed = focus.speed;
+        c.lastHeading = focus.heading;
+        if (cabinGlow.current) {
+          // A soft glow over the dashboard and wheel: barely there by day, what you see the cabin by at night.
+          cabinGlow.current.position.copy(FP_POS).add(FP_TURN_BACK.set(0, -0.2, 0.32).applyQuaternion(FP_QUAT));
+          cabinGlow.current.intensity = theme === "night" || theme === "neon" ? 0.55 : 0.1;
+        }
+        // In the car's frame +x is its left; turning left (heading rising) throws the head right.
+        FP_POS.add(FP_TURN_BACK.set(-c.gLat * 0.0011, -Math.abs(c.gLong) * 0.0003, -c.gLong * 0.0016).applyQuaternion(FP_QUAT));
+        FP_EULER.set(-0.03 + c.gLong * 0.0012, Math.PI - c.look, 0, "YXZ");
         FP_QUAT.multiply(FP_TURN.setFromEuler(FP_EULER));
         // A fast, slightly lazy follow: the head lags the car by a few frames, which reads as weight.
         if (c.fpFresh) camera.quaternion.copy(FP_QUAT);
@@ -609,6 +630,7 @@ export function World({ quality }: { quality: Quality }) {
           camera.updateProjectionMatrix();
         }
       } else {
+        if (cabinGlow.current) cabinGlow.current.intensity = 0;
         camera.position.set(focus.x - fx * back + fz * jx, c.y + 4.1 + jy + c.air * 1.4, focus.z - fz * back - fx * jx);
         camera.lookAt(focus.x + fx * 6, focus.y + 1.6, focus.z + fz * 6);
         fov = Math.min(94, 58 + pace * 15 + c.shake * 9 + (net.predictor.ctx.speed - 1) * 9);
@@ -628,6 +650,17 @@ export function World({ quality }: { quality: Quality }) {
       const a = time * 0.05;
       camera.position.set(centre.x + Math.sin(a) * 250, track.maxY + 96, centre.z + Math.cos(a) * 170);
       camera.lookAt(centre.x, track.maxY * 0.4, centre.z);
+    }
+    if (beam.current) {
+      const lamp = beam.current;
+      if (haveFocus) {
+        const hx = Math.sin(focus.heading);
+        const hz = Math.cos(focus.heading);
+        lamp.position.set(focus.x + hx * 1.7, focus.y + 0.7, focus.z + hz * 1.7);
+        lamp.target.position.set(focus.x + hx * 30, focus.y - 0.6, focus.z + hz * 30);
+        lamp.target.updateMatrixWorld();
+        lamp.intensity = 430;
+      } else lamp.intensity = 0;
     }
     if (Math.abs(camera.fov - fov) > 0.05) {
       camera.fov += (fov - camera.fov) * (1 - Math.exp(-dt * 6));
@@ -764,6 +797,11 @@ export function World({ quality }: { quality: Quality }) {
       >
         <orthographicCamera attach="shadow-camera" args={[-80, 80, 80, -80, 20, 700]} />
       </directionalLight>
+      {/* Instrument lighting for the driver's view: always in the scene (so switching views never
+          changes the number of lights), but dark unless you are in the seat. */}
+      <pointLight ref={cabinGlow} color="#c9dcff" intensity={0} distance={2.6} decay={2} />
+      {/* Your own headlights on the night circuits: a wide beam thrown down the road ahead. */}
+      {(theme === "night" || theme === "neon") && <spotLight ref={beam} color="#fff1d0" intensity={0} distance={95} angle={0.5} penumbra={0.75} decay={1.6} />}
       {theme === "neon" && (
         <>
           <pointLight ref={fillA} color="#22d3ee" intensity={1100} distance={90} decay={2} />

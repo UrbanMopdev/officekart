@@ -10,6 +10,9 @@ export const SNAPSHOT_EVERY = 1;
 
 export const ROOM_NAME = "race";
 export const MAX_PLAYERS = 12;
+/** Most computer-controlled cars a lobby can add. */
+export const MAX_CPUS = 7;
+export const CPU_LEVELS = ["Gentle", "Fair", "Fierce"] as const;
 export const CODE_LENGTH = 6;
 /** No 0/O/1/I/L so codes are easy to read aloud. */
 export const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
