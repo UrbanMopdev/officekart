@@ -5,7 +5,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { worldBackdrop, worldSky } from "./assets";
 import { LapDelta } from "./delta";
 import type { Cockpit } from "./cockpit";
-import { roadWet } from "./materials";
+import { cabinFrost, roadWet } from "./materials";
 import { DEFAULT_TRACK_ID, FLAG, FX, KART, angleDiff, driftLevel, getTrack, locate, EVENT } from "@office-kart/shared";
 import { net, type KartSample } from "../net/connection";
 import { useStore, type Quality } from "../store";
@@ -752,6 +752,7 @@ export function World({ quality }: { quality: Quality }) {
       const tickNow = net.raceTick();
       const raining = FORCE_RAIN || ((ev.event === EVENT.SLIPPERY || ev.event === EVENT.STORM) && tickNow >= ev.from && tickNow < ev.to);
       roadWet.value += ((raining ? 1 : 0) - roadWet.value) * Math.min(1, dt * (raining ? 0.6 : 0.12));
+      cabinFrost.value = theme === "frozen" ? 1 : 0;
       rain.points.visible = raining;
       if (raining) rain.update(dt, time, camera.position);
     }

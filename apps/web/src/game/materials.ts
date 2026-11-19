@@ -41,6 +41,8 @@ function worldVaryings(shader: Shader): void {
 
 /** 0 dry .. 1 soaked. Shared by every road, and driven by the weather. */
 export const roadWet = { value: 0 };
+/** How frosted the edges of a car's windows are: 1 on the frozen circuit, 0 elsewhere. Shared like roadWet. */
+export const cabinFrost = { value: 0 };
 
 export interface TerrainLook {
   ground: string;

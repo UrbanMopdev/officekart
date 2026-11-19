@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { shade, type Cabin } from "./cabins";
 import { buildHands, loadHands, type DriverHands } from "./hands";
-import { roadWet } from "./materials";
+import { cabinFrost, roadWet } from "./materials";
 
 export interface CockpitSpec {
   /** Driver's eye height above the road, and how far ahead of the car's centre the nose is. */
@@ -470,6 +470,8 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
     uWipeB: { value: new THREE.Vector2(sc.left - width * 0.56, sc.low) },
     uWipeLen: { value: width * 0.47 },
     uWipeFrom: { value: sc.from },
+    uFrost: cabinFrost,
+    uScreen: { value: new THREE.Vector4(sc.left, sc.right, sc.low, sc.top) },
   };
   glass.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, { uWet: roadWet, tDrops: { value: drops }, uDropTime: dropTime }, wipe);
@@ -482,6 +484,7 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
         `#include <common>
         uniform float uWet; uniform sampler2D tDrops; uniform float uDropTime; varying vec3 vCab;
         uniform vec2 uWipeA; uniform vec2 uWipeB; uniform float uWipeLen; uniform float uWipeFrom;
+        uniform float uFrost; uniform vec4 uScreen;
         // One blade: x = how much of the rain it has cleared here (1 just wiped, 0 not reached), y = the blade itself.
         vec2 wiper(vec2 pivot, float phase) {
           // The screen is raked, so its height is foreshortened seen from the front; undo that for a round sweep.
@@ -502,6 +505,16 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
       .replace(
         "#include <color_fragment>",
         `#include <color_fragment>
+        if (uFrost > 0.01) {
+          // On the frozen circuit, frost creeps in from the edges of the glass.
+          float inX = min(uScreen.x - vCab.x, vCab.x - uScreen.y);
+          float inY = min(vCab.y - uScreen.z, uScreen.w - vCab.y) * 1.5;
+          float rim = vCab.z > uWipeFrom ? min(inX, inY) : 0.11;
+          float grain = texture2D(tDrops, vCab.xy * 4.3 + vCab.z).r * 0.6 + texture2D(tDrops, vCab.yx * 9.1).g * 0.5 + 0.35;
+          float frost = (1.0 - smoothstep(0.0, 0.2, rim)) * min(1.0, grain) * uFrost;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.94, 1.0), frost);
+          diffuseColor.a = min(1.0, diffuseColor.a + frost * 0.5);
+        }
         if (uWet > 0.01) {
           vec2 at = vCab.xy * 2.7 + vec2(vCab.z * 1.3, vCab.z * 0.4);
           float beads = texture2D(tDrops, at).r;
@@ -521,7 +534,7 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
         }`,
       );
   };
-  glass.customProgramCacheKey = () => "cabin-glass-rain-2";
+  glass.customProgramCacheKey = () => "cabin-glass-rain-3";
   for (const m of cabin.glass) {
     m.material = glass;
     m.renderOrder = 5;

@@ -145,8 +145,9 @@ and Cadillac models have no interior, so they borrow the Golf's period cabin. Th
 on the wheel and turn with it, with sleeves in your colour (`hands.ts`). The concept car's instrument panel
 is redrawn live, the Golf-era cabins have a pair of analogue dials with moving needles, and the Corolla
 carries a small live speed readout; the mirrors show the road behind. In the rain, drops bead on the glass
-and two wiper blades sweep the windscreen clear; on the night circuits the instruments light the cabin
-and your own headlights reach down the road. The driver's head is thrown forward under braking, pressed
+and two wiper blades sweep the windscreen clear; on the frozen circuit frost creeps in from the edges of
+the glass; on the night circuits the instruments light the cabin and your own headlights reach down the
+road. The driver's head is thrown forward under braking, pressed
 back under power and pulled to the outside of corners. Your car's cabin is fetched as the race starts
 (0.3 to 4 MB, skipped on Low quality until you ask for the view); until it arrives the older built interior
 (`cockpit.ts`) stands in. The camera is fixed to the car, so it pitches on hills, leans on

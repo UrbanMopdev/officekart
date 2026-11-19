@@ -43,8 +43,9 @@ export const CABINS: Record<string, CabinSpec> = {
   prius: {
     eye: [0.361, 1.155, -0.13],
     tones: {
-      m_Carro_Interno: { color: "#2a2c30", roughness: 0.82, metalness: 0 },
-      m_Carro_Plastico: { color: "#141518", roughness: 0.7, metalness: 0 },
+      m_Carro_Interno: { color: "#5b5f68", roughness: 0.85, metalness: 0 },
+      m_Carro_Plastico: { color: "#2e3035", roughness: 0.72, metalness: 0 },
+      m_Carro_Metal_Preto: { color: "#1c1d21", roughness: 0.45, metalness: 0.3 },
       m_Carro_Plastico_Brilho: { color: "#0b0b0d", roughness: 0.2, metalness: 0.2 },
       m_Carro_Espelhos: { color: "#e9edf0", roughness: 0.03, metalness: 1 },
     },
@@ -86,8 +87,8 @@ export interface Cabin {
   panelArt: THREE.Texture | null;
   /** Set while a car is using this cabin: hands it back (hands off the wheel, mirrors and panel restored). */
   release: (() => void) | null;
-  /** The windscreen as seen from the front: its lower edge, its sides, and how far forward it starts. */
-  screen: { low: number; left: number; right: number; from: number };
+  /** The windscreen as seen from the front: its lower and upper edges, its sides, and how far forward it starts. */
+  screen: { low: number; top: number; left: number; right: number; from: number };
 }
 
 const cache = new Map<string, Cabin | "loading" | "failed">();
@@ -148,7 +149,7 @@ function mapMirrors(cabin: Cabin): void {
 }
 
 function prepare(key: string, gltf: { scene: THREE.Group }, spec: CabinSpec): Cabin {
-  const cabin: Cabin = { scene: gltf.scene, spec, spin: gltf.scene.getObjectByName("steerSpin") ?? null, wheelRadius: 0.185, paint: [], paint2: [], accent: [], glass: [], mirrors: [], mirrorsMapped: false, panel: null, panelArt: null, release: null, screen: { low: 0, left: 0.7, right: -0.7, from: spec.eye[2] + 0.3 } };
+  const cabin: Cabin = { scene: gltf.scene, spec, spin: gltf.scene.getObjectByName("steerSpin") ?? null, wheelRadius: 0.185, paint: [], paint2: [], accent: [], glass: [], mirrors: [], mirrorsMapped: false, panel: null, panelArt: null, release: null, screen: { low: 0, top: 2, left: 0.7, right: -0.7, from: spec.eye[2] + 0.3 } };
   const done = new Set<THREE.Material>();
   gltf.scene.traverse((o) => {
     const mesh = o as THREE.Mesh;
@@ -184,6 +185,7 @@ function prepare(key: string, gltf: { scene: THREE.Group }, spec: CabinSpec): Ca
   });
   mapMirrors(cabin);
   let lowest = 1e9;
+  let highest = -1e9;
   let left = -1e9;
   let right = 1e9;
   // Glass remembers where each point sits in the cabin, so rain can bead on it and stay put as the car moves.
@@ -201,11 +203,12 @@ function prepare(key: string, gltf: { scene: THREE.Group }, spec: CabinSpec): Ca
     for (let i = 0; i < pos.count; i++) {
       if (at[i * 3 + 2] < cabin.screen.from + 0.1 || at[i * 3 + 2] > spec.eye[2] + 1.6 || at[i * 3 + 1] < spec.eye[1] - 0.4 || Math.abs(at[i * 3]) > 0.95) continue;
       lowest = Math.min(lowest, at[i * 3 + 1]);
+      highest = Math.max(highest, at[i * 3 + 1]);
       left = Math.max(left, at[i * 3]);
       right = Math.min(right, at[i * 3]);
     }
   }
-  if (lowest < 1e8) cabin.screen = { low: lowest, left, right, from: cabin.screen.from };
+  if (lowest < 1e8) cabin.screen = { low: lowest, top: highest, left, right, from: cabin.screen.from };
   if (cabin.spin) {
     const box = new THREE.Box3().setFromObject(cabin.spin);
     const size = box.getSize(new THREE.Vector3());
