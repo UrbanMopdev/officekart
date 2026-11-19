@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import { buildCabinCockpit, buildCockpit, speedScreen, type Cockpit } from "./cockpit";
 import { cabinFor, cabinKey } from "./cabins";
+import { loadHands } from "./hands";
 import { carFinish, kitDriver, kitReady, kitVehicle, kitVersion, tintedMaterial, vehicleCar, type KitVehicle } from "./models";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -419,6 +420,11 @@ export class KartVisual {
   private cabinShown: ReturnType<typeof cabinFor> = null;
   private kitSecondMat: THREE.Material | null = null;
   private bikeEye: THREE.Object3D | null = null;
+  /** Fetch what the driver's view needs ahead of time, so switching to it mid-race is instant. */
+  preloadView(): void {
+    if (this.cabinKey) cabinFor(this.cabinKey);
+    void loadHands();
+  }
 
   /**
    * From the driver's seat a car swaps its outside for a built interior, so the view is the same

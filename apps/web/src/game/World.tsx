@@ -321,6 +321,8 @@ export function World({ quality }: { quality: Quality }) {
       v.setIdentity(p.name, p.color, !mine && camDist2 > 110);
       v.setStyle(p.vehicle, p.avatar);
       v.setFirstPerson(mine && store.settings.view === "bonnet");
+      // Have the cabin ready before it is asked for, except where every megabyte counts.
+      if (mine && quality !== "low") v.preloadView();
       if (mine) {
         cam.current.eyeNode = v.eyeNode;
         cam.current.steer = v.steering;

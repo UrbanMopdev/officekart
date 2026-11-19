@@ -31,6 +31,12 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
     if (n) void net.create(n);
   };
 
+  /** A lobby that opens with computer-controlled cars in it; friends can still join with the code. */
+  const vsCpu = () => {
+    const n = validName();
+    if (n) void net.create(n, { cpus: 5 });
+  };
+
   /** Solo against the clock: this week's challenge, or any track. */
   const trial = (weekly: boolean) => {
     const n = validName();
@@ -95,6 +101,9 @@ export function Menu({ inviteCode, onClearInvite }: { inviteCode: string | null;
                 <Button type="submit" disabled={busy} className="w-full text-lg">
                   {busy ? "Creating…" : "Create private lobby"}
                 </Button>
+                <button type="button" disabled={busy} onClick={vsCpu} className="w-full rounded-2xl border-2 border-white/15 bg-white/5 px-4 py-2.5 text-sm font-bold text-white hover:border-white/40 disabled:opacity-50">
+                  Race the computer <span className="font-normal text-white/55">· a lobby with 5 CPU cars</span>
+                </button>
                 <div className="flex items-center gap-3 text-xs uppercase tracking-widest text-white/40">
                   <span className="h-px flex-1 bg-white/15" />
                   or join one

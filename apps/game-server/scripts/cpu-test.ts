@@ -50,6 +50,15 @@ async function main(): Promise<void> {
     host.room.send(MSG.SETTINGS, { cpus: 0 });
     await sleep(300);
     check(players(host).every((p) => !p.cpu), "turning them off removes them");
+
+    // "Race the computer" from the front page: the lobby opens with CPU cars, and the person keeps the first seat.
+    const solo = new Bot(server.url, { name: "Solo", lane: 0, join: { cpus: 2, color: 0 } });
+    await solo.create();
+    await sleep(400);
+    const there = players(solo);
+    const me = there.find((p) => !p.cpu) as (P & { slot: number; color: number }) | undefined;
+    check(there.filter((p) => p.cpu).length === 2 && !!me && me.slot === 0 && me.color === 0, `a lobby can open with CPU cars already in it (${there.map((p) => p.name).join(", ")})`);
+    solo.room.leave();
   } finally {
     host.room?.leave();
     await server.stop();

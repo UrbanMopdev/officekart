@@ -19,6 +19,8 @@ export interface CabinSpec {
   readout?: { at: [number, number, number]; size: [number, number]; tilt: number; yaw?: number };
   /** The instrument display is a picture the game redraws (the concept car's panel). */
   livePanel?: boolean;
+  /** An empty instrument recess to fill with a pair of live analogue dials: centre, size, tilt. */
+  dials?: { at: [number, number, number]; size: [number, number]; tilt: number };
 }
 
 export const CABINS: Record<string, CabinSpec> = {
@@ -52,12 +54,13 @@ export const CABINS: Record<string, CabinSpec> = {
   golf: {
     eye: [0.403, 1.1, 0.1],
     tones: {
-      m_plastic: { color: "#1d1e22", roughness: 0.72, metalness: 0 },
-      m_interior: { color: "#25262a", roughness: 0.8, metalness: 0 },
+      m_plastic: { color: "#27282d", roughness: 0.72, metalness: 0 },
+      m_interior: { color: "#2d2e33", roughness: 0.8, metalness: 0 },
       m_seats: { color: "#3a3d45", roughness: 0.95, metalness: 0 },
       m_metal: { color: "#b9bdc4", roughness: 0.3, metalness: 1 },
       m_mirror: { color: "#e9edf0", roughness: 0.03, metalness: 1 },
     },
+    dials: { at: [0.403, 0.927, 0.688], size: [0.235, 0.081], tilt: 0.3 },
   },
 };
 
@@ -151,7 +154,6 @@ function prepare(key: string, gltf: { scene: THREE.Group }, spec: CabinSpec): Ca
     const m = mesh.material as THREE.MeshStandardMaterial;
     const name = m.name ?? "";
     mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
     if (name === "paint") cabin.paint.push(mesh);
     else if (name === "paint2") cabin.paint2.push(mesh);
     else if (name === "glass") cabin.glass.push(mesh);
@@ -190,8 +192,9 @@ function prepare(key: string, gltf: { scene: THREE.Group }, spec: CabinSpec): Ca
     }
     mesh.geometry.setAttribute("cabinPos", new THREE.BufferAttribute(at, 3));
     // The windscreen is the glass ahead of the driver: note where it sits, for the wipers.
+    // (Lamp lenses are glass too: only glass near eye level and within reach counts.)
     for (let i = 0; i < pos.count; i++) {
-      if (at[i * 3 + 2] < cabin.screen.from + 0.1) continue;
+      if (at[i * 3 + 2] < cabin.screen.from + 0.1 || at[i * 3 + 2] > spec.eye[2] + 1.6 || at[i * 3 + 1] < spec.eye[1] - 0.4 || Math.abs(at[i * 3]) > 0.95) continue;
       lowest = Math.min(lowest, at[i * 3 + 1]);
       left = Math.max(left, at[i * 3]);
       right = Math.min(right, at[i * 3]);
@@ -218,8 +221,13 @@ export function cabinFor(key: string | null): Cabin | null {
   loader.setMeshoptDecoder(MeshoptDecoder);
   loader.loadAsync(`/world/models/cabin_${key}.glb`).then(
     (gltf) => {
-      cache.set(key, prepare(key, gltf, CABINS[key]));
-      version++;
+      try {
+        cache.set(key, prepare(key, gltf, CABINS[key]));
+        version++;
+      } catch (err) {
+        console.warn(`Cabin ${key} could not be set up; using the built interior.`, err);
+        cache.set(key, "failed");
+      }
     },
     (err) => {
       console.warn(`Cabin ${key} could not be loaded; using the built interior.`, err);

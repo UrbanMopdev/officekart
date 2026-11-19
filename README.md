@@ -143,15 +143,20 @@ pillars and mirrors of that car's own model, with its bodywork in your paint (`a
 The Corolla, Prius, Honda e, Fortuner, Golf and the concept car each have their own; the DeLorean, Datsun
 and Cadillac models have no interior, so they borrow the Golf's period cabin. The driver's gloved hands are
 on the wheel and turn with it, with sleeves in your colour (`hands.ts`). The concept car's instrument panel
-is redrawn live; the Corolla and Golf carry a small live speed readout; the mirrors show the road behind.
-Cabins are fetched the first time you sit in that car (0.3 to 4 MB each); until one arrives the older
-built interior (`cockpit.ts`) stands in. The camera is fixed to the car, so it pitches on hills, leans on
+is redrawn live, the Golf-era cabins have a pair of analogue dials with moving needles, and the Corolla
+carries a small live speed readout; the mirrors show the road behind. In the rain, drops bead on the glass
+and two wiper blades sweep the windscreen clear; on the night circuits the instruments light the cabin
+and your own headlights reach down the road. The driver's head is thrown forward under braking, pressed
+back under power and pulled to the outside of corners. Your car's cabin is fetched as the race starts
+(0.3 to 4 MB, skipped on Low quality until you ask for the view); until it arrives the older built interior
+(`cockpit.ts`) stands in. The camera is fixed to the car, so it pitches on hills, leans on
 banking and slides with the tail, with a little head turn into corners and a surface buzz that is rougher
 off the tarmac; spins and stunts are not passed on to the camera. The motorbike keeps its own bodywork.
 The choice is saved with the other settings.
 
 **CPU opponents.** The host can add up to seven computer-controlled cars in the lobby (none by default)
-and choose how hard they drive: Gentle, Fair or Fierce. They are always marked as CPU: in their names, in
+and choose how hard they drive: Gentle, Fair or Fierce. *Race the computer* on the front page opens a
+lobby with five already in it. They are always marked as CPU: in their names, in
 the lobby list and on their name tags. The server drives them (`apps/game-server/src/rooms/cpu.ts`)
 through the same inputs and physics as everyone else: they follow the road on their own line, the better
 ones power-slide for the boost, they pick up and use power-ups, time their launch, and ask to be put back

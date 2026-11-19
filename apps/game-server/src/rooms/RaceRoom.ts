@@ -193,6 +193,9 @@ export class RaceRoom extends Room<RaceState> {
       }
     }
 
+    // "Race the computer" from the front page: the lobby opens with CPU cars already asked for.
+    if (!this.state.trial && typeof options?.cpus === "number" && Number.isInteger(options.cpus) && options.cpus >= 0 && options.cpus <= MAX_CPUS) this.state.cpus = options.cpus;
+
     this.onMessage(MSG.INPUT, (client, payload) => this.onInput(client, payload));
 
     this.onMessage(MSG.PING, (client, t) => {
@@ -307,7 +310,7 @@ export class RaceRoom extends Room<RaceState> {
     }
 
     // A person always gets a seat ahead of a computer-controlled car.
-    this.syncCpus(1);
+    this.syncCpus(1, false);
     const meta = newMeta();
     if (typeof options?.pid === "string" && /^[a-z0-9-]{8,40}$/.test(options.pid)) meta.pid = options.pid;
     client.userData = meta;
@@ -320,6 +323,8 @@ export class RaceRoom extends Room<RaceState> {
     player.avatar = pickIndex(options?.avatar, AVATARS.length);
     this.state.players.set(client.sessionId, player);
     if (!this.state.players.has(this.state.hostId)) this.state.hostId = client.sessionId;
+    // Any CPU cars asked for take the seats, slots and colours that are left once the person is in.
+    this.syncCpus(0);
     log.info("player_joined", { room: this.roomId, player: client.sessionId, players: this.state.players.size });
   }
 
@@ -443,7 +448,7 @@ export class RaceRoom extends Room<RaceState> {
    * Bring the number of computer-controlled cars in line with the host's setting, leaving `spare`
    * seats free for people. They are added and removed only between races.
    */
-  private syncCpus(spare: number): void {
+  private syncCpus(spare: number, grow = true): void {
     const st = this.state;
     if (st.phase === "countdown" || st.phase === "racing") return;
     const cpus = [...st.players.values()].filter((p) => p.cpu);
@@ -453,7 +458,7 @@ export class RaceRoom extends Room<RaceState> {
       st.players.delete(cpus[i].id);
       this.racers.delete(cpus[i].id);
     }
-    for (let i = cpus.length; i < want; i++) {
+    for (let i = cpus.length; grow && i < want; i++) {
       const p = new PlayerState();
       let n = 1;
       while (st.players.has(`cpu-${n}`)) n++;

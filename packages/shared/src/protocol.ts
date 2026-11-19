@@ -52,6 +52,8 @@ export interface CreateOptions extends JoinOptions {
   weekly?: boolean;
   trackId?: string;
   speed?: number;
+  /** Start the lobby with this many computer-controlled cars already added. */
+  cpus?: number;
 }
 
 export interface BoardEntry {

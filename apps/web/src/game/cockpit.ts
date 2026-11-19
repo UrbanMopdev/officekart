@@ -235,6 +235,95 @@ export function buildCockpit(spec: CockpitSpec): Cockpit {
 }
 
 
+/**
+ * A pair of round analogue dials (rev counter and speedometer) with live needles, for cars from before
+ * screens: white markings on black, orange needles, backlit. Redrawn only when a needle moves.
+ */
+export function dialCluster(width: number, height: number): { mesh: THREE.Mesh; texture: THREE.CanvasTexture; set(kmh: number, boost: boolean): void } {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 176;
+  const ctx = canvas.getContext("2d")!;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false, color: "#c9c9c9" }));
+  const START = Math.PI * 0.78;
+  const SWEEP = Math.PI * 1.44;
+  const dial = (cx: number, r: number, marks: string[], minor: number, unit: string, redFrom: number, value: number): void => {
+    const cy = 92;
+    ctx.fillStyle = "#07080a";
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#3a3d42";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    const steps = (marks.length - 1) * minor;
+    for (let i = 0; i <= steps; i++) {
+      const a = START + (i / steps) * SWEEP;
+      const major = i % minor === 0;
+      ctx.strokeStyle = i / steps >= redFrom ? "#ff5a3c" : "#f1f3f5";
+      ctx.lineWidth = major ? 3 : 1.4;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (r - (major ? 12 : 7)), cy + Math.sin(a) * (r - (major ? 12 : 7)));
+      ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      ctx.stroke();
+      if (major) {
+        ctx.fillStyle = "#f1f3f5";
+        ctx.font = "700 13px ui-sans-serif, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(marks[i / minor], cx + Math.cos(a) * (r - 24), cy + Math.sin(a) * (r - 24));
+      }
+    }
+    ctx.fillStyle = "#9aa3ad";
+    ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillText(unit, cx, cy + r * 0.48);
+    // The needle, with a counterweight and a cap.
+    const a = START + Math.max(0, Math.min(1, value)) * SWEEP;
+    ctx.strokeStyle = "#ff7a1a";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx - Math.cos(a) * 12, cy - Math.sin(a) * 12);
+    ctx.lineTo(cx + Math.cos(a) * (r - 10), cy + Math.sin(a) * (r - 10));
+    ctx.stroke();
+    ctx.fillStyle = "#17181b";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  let shown = -1;
+  const set = (kmh: number, boost: boolean): void => {
+    const rev = Math.min(1, 0.14 + ((kmh % 38) / 38) * 0.72 + (boost ? 0.1 : 0));
+    const key = Math.round(kmh) * 64 + Math.round(rev * 60);
+    if (key === shown) return;
+    shown = key;
+    ctx.fillStyle = "#0b0c0e";
+    ctx.fillRect(0, 0, 512, 176);
+    dial(132, 74, ["0", "1", "2", "3", "4", "5", "6", "7"], 2, "x1000 r/min", 0.86, rev);
+    dial(380, 74, ["0", "40", "80", "120", "160", "200", "240"], 4, "km/h", 2, kmh / 240);
+    // Between the dials: a fuel gauge and a row of tell-tales.
+    ctx.fillStyle = "#f1f3f5";
+    ctx.font = "700 11px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("E", 232, 64);
+    ctx.fillText("F", 280, 64);
+    ctx.fillStyle = "#2b2e33";
+    ctx.fillRect(236, 76, 40, 6);
+    ctx.fillStyle = "#f1f3f5";
+    ctx.fillRect(236, 76, 31, 6);
+    ctx.fillStyle = boost ? "#ffc23a" : "#1d3a2a";
+    ctx.fillRect(238, 102, 14, 9);
+    ctx.fillStyle = "#3a1d1d";
+    ctx.fillRect(260, 102, 14, 9);
+    texture.needsUpdate = true;
+  };
+  set(0, false);
+  return { mesh, texture, set };
+}
+
 /** Raindrops for glass: beads in the red channel, larger drops with short tails in the green. Tiles. */
 function dropsTexture(): THREE.CanvasTexture {
   const size = 256;
@@ -406,8 +495,8 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
           float at = 0.5 - 0.5 * cos(phase);
           float pass = acos(clamp(1.0 - 2.0 * u, -1.0, 1.0));
           float since = min(mod(phase - pass, 6.2832), mod(phase + pass, 6.2832)) / 4.6;
-          float blade = 1.0 - smoothstep(0.009, 0.015, abs(u - at) * (park - top) * r);
-          return vec2(1.0 - smoothstep(0.1, 1.2, since), blade);
+          float blade = 1.0 - smoothstep(0.011, 0.017, abs(u - at) * (park - top) * r);
+          return vec2(1.0 - smoothstep(0.04, 0.6, since), blade);
         }`,
       )
       .replace(
@@ -422,7 +511,7 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
           if (vCab.z > uWipeFrom && uWet > 0.3) {
             float phase = uDropTime * 4.6;
             vec2 w = max(wiper(uWipeA, phase), wiper(uWipeB, phase));
-            drop *= 1.0 - w.x * 0.92;
+            drop *= 1.0 - w.x * 0.96;
             film *= 1.0 - w.x;
             diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.012), w.y);
             diffuseColor.a = max(diffuseColor.a, w.y * 0.96);
@@ -457,6 +546,14 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
     cabin.panel.needsUpdate = true;
     setSpeed = panel.set;
     disposables.push(panel.texture);
+  } else if (cabin.spec.dials) {
+    const r = cabin.spec.dials;
+    const cluster = dialCluster(r.size[0], r.size[1]);
+    cluster.mesh.position.set(r.at[0], r.at[1], r.at[2]);
+    cluster.mesh.rotation.set(r.tilt, Math.PI, 0, "YXZ");
+    shell.add(cluster.mesh);
+    setSpeed = cluster.set;
+    disposables.push(cluster.texture, cluster.mesh.geometry, cluster.mesh.material as THREE.Material);
   } else if (cabin.spec.readout) {
     const r = cabin.spec.readout;
     const dial = speedScreen(r.size[0], r.size[1]);
