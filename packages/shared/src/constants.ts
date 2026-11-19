@@ -172,7 +172,7 @@ export const EVENT = { NONE: 0, LOW_GRAVITY: 1, SLIPPERY: 2, WIND: 3, FRENZY: 4,
 export const EVENT_INFO: { name: string; text: string }[] = [
   { name: "", text: "" },
   { name: "Low Gravity", text: "Jumps go much further." },
-  { name: "Slippery Road", text: "The whole track handles like ice." },
+  { name: "Rain", text: "The track is soaked: far less grip everywhere." },
   { name: "Mega Windstorm", text: "Gusts push karts sideways." },
   { name: "Obstacle Frenzy", text: "Every hazard speeds up." },
   { name: "Double Power-Ups", text: "Item boxes refill instantly." },

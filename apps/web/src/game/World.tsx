@@ -4,7 +4,9 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { worldBackdrop, worldSky } from "./assets";
 import { LapDelta } from "./delta";
-import { DEFAULT_TRACK_ID, FLAG, FX, KART, angleDiff, driftLevel, getTrack, locate } from "@office-kart/shared";
+import type { Cockpit } from "./cockpit";
+import { roadWet } from "./materials";
+import { DEFAULT_TRACK_ID, FLAG, FX, KART, angleDiff, driftLevel, getTrack, locate, EVENT } from "@office-kart/shared";
 import { net, type KartSample } from "../net/connection";
 import { useStore, type Quality } from "../store";
 import { EXHAUST, KartVisual, REAR_LEFT, REAR_RIGHT } from "./kartVisual";
@@ -55,10 +57,13 @@ const LIGHTING: Record<string, { sun: string; sunIntensity: number; dir: readonl
  * reflect real clouds) and is drawn behind it. The sun in LIGHTING points the
  * same way as the sun or moon in the photograph.
  */
+/** ?rain=1 turns the rain on in previews. */
+const FORCE_RAIN = typeof location !== "undefined" && new URLSearchParams(location.search).get("rain") === "1";
 const FP_POS = new THREE.Vector3();
 const FP_QUAT = new THREE.Quaternion();
 const FP_TURN = new THREE.Quaternion();
 const FP_EULER = new THREE.Euler();
+const FP_TURN_BACK = new THREE.Vector3();
 
 const SKIES: Record<string, { name: string; env: number; backdrop: number }> = {
   frozen: { name: "day", env: 0.85, backdrop: 0.75 },
@@ -85,6 +90,16 @@ export function World({ quality }: { quality: Quality }) {
   const shadows = quality !== "low";
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
+  // A small off-screen picture for the cockpit's rear-view mirror. The image is flipped, as a mirror's is.
+  const mirror = useMemo(() => {
+    const target = new THREE.WebGLRenderTarget(448, 124, { type: THREE.HalfFloatType });
+    target.texture.wrapS = THREE.RepeatWrapping;
+    target.texture.repeat.x = -1;
+    target.texture.offset.x = 1;
+    const camera = new THREE.PerspectiveCamera(26, 448 / 124, 0.5, 900);
+    return { target, camera };
+  }, []);
+  useEffect(() => () => mirror.target.dispose(), [mirror]);
 
   const kartsRef = useRef<THREE.Group>(null);
   const sunRef = useRef<THREE.DirectionalLight>(null);
@@ -92,7 +107,7 @@ export function World({ quality }: { quality: Quality }) {
   const fillB = useRef<THREE.PointLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
   const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean ; champ: Ghost | null; champVisual: KartVisual | null; champLook: { name: string; color: number; vehicle: number; avatar: number } | null }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, champ: null, champVisual: null, champLook: null });
-  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true, delta: null as LapDelta | null, deltaFor: null as unknown });
+  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true, interior: null as Cockpit | null, mirrorTick: 0, delta: null as LapDelta | null, deltaFor: null as unknown });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
   const fogHome = useRef<{ color: THREE.Color; near: number; far: number } | null>(null);
@@ -116,6 +131,15 @@ export function World({ quality }: { quality: Quality }) {
   const calm = useStore((s) => s.settings.reducedFx);
   const weather = useMemo(() => (weatherKind && !calm ? new Weather(weatherKind, quality === "low" ? 0.4 : quality === "medium" ? 0.7 : 1) : null), [weatherKind, quality, calm]);
   useEffect(() => () => weather?.dispose(), [weather]);
+  // Rain belongs to the weather events, not to a track, so it is kept ready and shown when one is on.
+  const rain = useMemo(() => new Weather("rain", quality === "low" ? 0.4 : quality === "medium" ? 0.7 : 1), [quality]);
+  useEffect(() => {
+    rain.points.visible = false;
+    return () => {
+      rain.dispose();
+      roadWet.value = 0;
+    };
+  }, [rain]);
   const party = useRef({ race: -1, done: false });
 
   // Image-based lighting: gives paint, metal and glass something to reflect.
@@ -298,6 +322,7 @@ export function World({ quality }: { quality: Quality }) {
       if (mine) {
         cam.current.eyeNode = v.eyeNode;
         cam.current.steer = v.steering;
+        cam.current.interior = v.interior;
       }
       // Tilt the kart to the road under it: slope ahead gives pitch, banking gives roll.
       locate(track, sample.x, sample.z, v.hint, loc);
@@ -563,6 +588,22 @@ export function World({ quality }: { quality: Quality }) {
         const buzz = (0.0035 + ((focus.flags & FLAG.OFFROAD) !== 0 ? 0.016 : 0)) * Math.min(1, Math.abs(focus.speed) / 30) + c.shake * 0.02;
         camera.position.set(FP_POS.x + Math.sin(time * 61) * buzz * 0.6, FP_POS.y + Math.sin(time * 47 + 1.3) * buzz + jy * 0.25, FP_POS.z + Math.cos(time * 53) * buzz * 0.6);
         fov = Math.min(98, 74 + pace * 11 + c.shake * 6);
+        // Rear-view mirror: a second, small picture of the road behind, redrawn every other frame.
+        if (c.interior && quality !== "low") {
+          c.interior.setRearView(mirror.target.texture);
+          if (c.mirrorTick++ % 2 === 0) {
+            c.eyeNode.getWorldQuaternion(mirror.camera.quaternion);
+            mirror.camera.position.copy(FP_POS).addScaledVector(FP_TURN_BACK.set(0, 0.15, -2.9).applyQuaternion(mirror.camera.quaternion), 1);
+            mirror.camera.updateMatrixWorld();
+            const before = gl.getRenderTarget();
+            const shadows = gl.shadowMap.autoUpdate;
+            gl.shadowMap.autoUpdate = false;
+            gl.setRenderTarget(mirror.target);
+            gl.render(scene, mirror.camera);
+            gl.setRenderTarget(before);
+            gl.shadowMap.autoUpdate = shadows;
+          }
+        } else c.interior?.setRearView(null);
         if (camera.near !== 0.1) {
           camera.near = 0.1;
           camera.updateProjectionMatrix();
@@ -670,6 +711,14 @@ export function World({ quality }: { quality: Quality }) {
       }
     }
     weather?.update(dt, time, camera.position);
+    {
+      const ev = net.predictor.ctx;
+      const tickNow = net.raceTick();
+      const raining = FORCE_RAIN || ((ev.event === EVENT.SLIPPERY || ev.event === EVENT.STORM) && tickNow >= ev.from && tickNow < ev.to);
+      roadWet.value += ((raining ? 1 : 0) - roadWet.value) * Math.min(1, dt * (raining ? 0.6 : 0.12));
+      rain.points.visible = raining;
+      if (raining) rain.update(dt, time, camera.position);
+    }
     particles.glow.update(dt, pixelsPerUnit);
     particles.smoke.update(dt, pixelsPerUnit);
 
@@ -725,6 +774,7 @@ export function World({ quality }: { quality: Quality }) {
       <group ref={kartsRef} />
       <primitive object={skids.mesh} />
       {weather && <primitive object={weather.points} />}
+      <primitive object={rain.points} />
       <primitive object={particles.smoke.points} />
       <primitive object={particles.glow.points} />
     </>

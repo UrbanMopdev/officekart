@@ -3,7 +3,7 @@
  * kart; each kart only owns its paint materials, so twelve karts cost little.
  */
 import * as THREE from "three";
-import { buildCockpit, type Cockpit } from "./cockpit";
+import { buildCockpit, speedScreen, type Cockpit } from "./cockpit";
 import { carFinish, kitDriver, kitReady, kitVehicle, kitVersion, tintedMaterial, type KitVehicle } from "./models";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -396,6 +396,11 @@ export class KartVisual {
   private kitMats: THREE.MeshStandardMaterial[] = [];
   /** Second colour on two-tone cars: the player colour, lightened. */
   private kitTail: THREE.MeshBasicMaterial | null = null;
+  private bikeDial: ReturnType<typeof speedScreen> | null = null;
+  /** The built interior, when the driver's view is on (cars only). */
+  get interior(): Cockpit | null {
+    return this.cockpit;
+  }
   private braking = 0;
   /** Where the driver's eyes are, for the first-person view: height and distance ahead of centre. */
   eye: [number, number] = [1.5, 0];
@@ -658,11 +663,13 @@ export class KartVisual {
     this.kitSecond = null;
     this.kitTail?.dispose();
     this.kitTail = null;
+    this.bikeDial?.texture.dispose();
+    this.bikeDial = null;
     this.kitCar = !!v.car;
     if (v.bike) this.buildBike(kit, v);
     else if (v.car) this.buildCar(kit, v);
     this.cockpitSpec = v.car && !v.bike ? { eyeHeight: v.car.top * 0.81 + v.car.trim.ride, front: (v.car.lamps?.front ?? 2.33) + v.car.offsetZ, halfWidth: v.car.lamps?.half ?? 1.0, scale: v.scale } : null;
-    this.eye = v.bike ? [1.58 * v.scale, 0.3] : v.car ? (v.car.lamps ? [(v.car.top * 0.81 + v.car.trim.ride) * v.scale, -0.12 * v.scale] : [(1.03 + v.car.trim.ride) * v.scale, 0.95 * v.scale]) : [1.9, 0.2];
+    this.eye = v.bike ? [1.5 * v.scale, 0.2] : v.car ? (v.car.lamps ? [(v.car.top * 0.81 + v.car.trim.ride) * v.scale, -0.12 * v.scale] : [(1.03 + v.car.trim.ride) * v.scale, 0.95 * v.scale]) : [1.9, 0.2];
     const { material, tint } = v.car ? { material: null, tint: this.kitTint! } : tintedMaterial(v.material, v.paint);
     this.kitTint = tint;
     if (material) {
@@ -756,6 +763,14 @@ export class KartVisual {
       ],
       carFinish("leather"),
     );
+    // Rider's view: an instrument pod behind the screen, and mirrors on stalks.
+    const dial = speedScreen(0.2, 0.075);
+    dial.mesh.position.set(0, 1.19, 0.66);
+    dial.mesh.rotation.set(0.6, Math.PI, 0);
+    kit.add(dial.mesh);
+    this.bikeDial = dial;
+    add([blob(V(0, 1.175, 0.685), 0.125, 0.03, 0.07, -0.6), ...both((s) => limb(V(s * 0.16, 1.02, 0.6), V(s * 0.36, 1.2, 0.66), 0.012)), ...both((s) => blob(V(s * 0.4, 1.22, 0.66), 0.075, 0.045, 0.02))], carFinish("trim"));
+    add(both((s) => blob(V(s * 0.4, 1.22, 0.648), 0.066, 0.038, 0.006)), carFinish("chrome"));
     // Wheels: the car's, narrowed.
     for (const z of [0.7, -0.68]) {
       const pivot = new THREE.Group();
@@ -974,6 +989,7 @@ export class KartVisual {
       this.braking += ((decel > 5 && Math.abs(speed) > 2 ? 1 : 0) - this.braking) * Math.min(1, dt * 14);
       this.kitTail.color.setRGB(1.6 + this.braking * 8, 0.09 + this.braking * 0.5, 0.06 + this.braking * 0.3);
     }
+    this.bikeDial?.set(Math.abs(speed) * 3.6, (flags & FLAG.BOOST) !== 0);
     if (this.cockpit) {
       // The cabin moves with the car (dive, squat, lean and slide) but is spared spins and stunts.
       this.cockpit.group.rotation.set(this.pitch * 0.8, this.slide * 0.85, this.roll * 0.7);

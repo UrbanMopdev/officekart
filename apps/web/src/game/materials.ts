@@ -39,6 +39,9 @@ function worldVaryings(shader: Shader): void {
   shader.fragmentShader = shader.fragmentShader.replace("#include <common>", `#include <common>\n${VARYINGS}`);
 }
 
+/** 0 dry .. 1 soaked. Shared by every road, and driven by the weather. */
+export const roadWet = { value: 0 };
+
 export interface TerrainLook {
   ground: string;
   rock: string;
@@ -160,12 +163,13 @@ export function roadMaterial(lines: THREE.Texture, tint: THREE.ColorRepresentati
     tN: { value: worldTexture("tex/asphalt_n.jpg", false, 16) },
     uTint: { value: new THREE.Color(tint) },
     uCircuit: { value: circuit ? 1 : 0 },
+    uWet: roadWet,
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     worldVaryings(shader);
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform sampler2D tD; uniform sampler2D tN; uniform vec3 uTint; uniform float uCircuit; vec3 tWorldN; float tPaint; float tRubber;")
+      .replace("#include <common>", "#include <common>\nuniform sampler2D tD; uniform sampler2D tN; uniform vec3 uTint; uniform float uCircuit; uniform float uWet; vec3 tWorldN; float tPaint; float tRubber;")
       .replace(
         "#include <map_fragment>",
         `vec4 lines = texture2D(map, vMapUv);
@@ -195,11 +199,14 @@ export function roadMaterial(lines: THREE.Texture, tint: THREE.ColorRepresentati
         asp *= 1.0 - 0.34 * tRubber - 0.12 * repair - seam * 0.4 - crack * 0.5;
         asp = mix(asp, asp * 1.5 + vec3(0.012, 0.011, 0.009), dusty);
         vec3 paintCol = mix(lines.rgb * (0.62 + 0.2 * grain), vec3(0.74, 0.73, 0.69) * (0.75 + 0.25 * grain), uCircuit);
+        // Wet tarmac is darker, and standing water smooths the grain away.
+        asp *= mix(1.0, 0.55, uWet);
         diffuseColor.rgb *= mix(asp, paintCol, tPaint);
         vec3 an = texture2D(tN, au).xyz * 2.0 - 1.0;
-        tWorldN = normalize(normalize(vWNrm) + vec3(an.x, 0.0, an.y) * 0.75);`,
+        float film = uWet * (0.55 + 0.45 * smoothstep(0.35, 0.65, wide.g * 9.0));
+        tWorldN = normalize(normalize(vWNrm) + vec3(an.x, 0.0, an.y) * 0.75 * (1.0 - 0.8 * film));`,
       )
-      .replace("#include <roughnessmap_fragment>", "float roughnessFactor = roughness * mix(1.0, 0.72, tPaint) * (1.0 - 0.3 * tRubber);")
+      .replace("#include <roughnessmap_fragment>", "float roughnessFactor = roughness * mix(1.0, 0.72, tPaint) * (1.0 - 0.3 * tRubber) * (1.0 - 0.72 * uWet * (0.55 + 0.45 * smoothstep(0.35, 0.65, texture2D(tD, vWPos.xz * 0.0209 + 0.4).g * 9.0)));")
       .replace("#include <normal_fragment_maps>", "normal = normalize(mat3(viewMatrix) * tWorldN);");
   };
   mat.customProgramCacheKey = () => "road";

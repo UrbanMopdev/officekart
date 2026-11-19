@@ -6,11 +6,12 @@
  */
 import * as THREE from "three";
 
-export type WeatherKind = "snow" | "embers" | "dust" | "motes";
+export type WeatherKind = "snow" | "embers" | "dust" | "motes" | "rain";
 
 const LOOK: Record<WeatherKind, { count: number; size: number; opacity: number; additive: boolean; fall: number; wind: [number, number]; sway: number; colors: string[]; box: [number, number, number] }> = {
   snow: { count: 900, size: 0.34, opacity: 0.9, additive: false, fall: -3.2, wind: [1.6, 0.5], sway: 1.2, colors: ["#ffffff", "#eaf4ff"], box: [46, 22, 46] },
   embers: { count: 420, size: 0.3, opacity: 0.95, additive: true, fall: 1.9, wind: [0.9, 0.3], sway: 1.6, colors: ["#ff7a1a", "#ffb347", "#ff4d1a"], box: [44, 20, 44] },
+  rain: { count: 2400, size: 0.11, opacity: 0.7, additive: false, fall: -30, wind: [3.5, 1.2], sway: 0.2, colors: ["#c9d6e2", "#aebccb"], box: [30, 16, 30] },
   dust: { count: 260, size: 0.16, opacity: 0.4, additive: true, fall: -0.12, wind: [0.15, 0.1], sway: 0.35, colors: ["#fff3d6", "#ffffff"], box: [26, 10, 26] },
   motes: { count: 380, size: 0.26, opacity: 0.85, additive: true, fall: 0.5, wind: [0.4, -0.3], sway: 0.9, colors: ["#22d3ee", "#e879f9", "#a78bfa", "#f472b6"], box: [42, 18, 42] },
 };

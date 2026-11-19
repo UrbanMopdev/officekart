@@ -22,6 +22,8 @@ export interface Cockpit {
   eye: THREE.Object3D;
   wheel: THREE.Group;
   setSpeed(kmh: number, boost: boolean): void;
+  /** Give the mirror a picture of the road behind, or null to go back to plain glass. */
+  setRearView(texture: THREE.Texture | null): void;
   dispose(): void;
 }
 
@@ -41,6 +43,47 @@ const merged = (parts: THREE.BufferGeometry[]): THREE.BufferGeometry => {
   for (const p of parts) p.dispose();
   return g;
 };
+
+/** A small digital dash: rev bar, speed and gear. Redrawn only when the reading changes. */
+export function speedScreen(width: number, height: number): { mesh: THREE.Mesh; texture: THREE.CanvasTexture; set(kmh: number, boost: boolean): void } {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 96;
+  const ctx = canvas.getContext("2d")!;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshBasicMaterial({ map: texture, toneMapped: false }));
+  let shown = -1;
+  const set = (kmh: number, boost: boolean): void => {
+    const key = Math.round(kmh) * 2 + (boost ? 1 : 0);
+    if (key === shown) return;
+    shown = key;
+    ctx.fillStyle = "#05070a";
+    ctx.fillRect(0, 0, 256, 96);
+    // Rev bar: climbs through each gear and drops back on the change.
+    const gear = Math.min(6, 1 + Math.floor(kmh / 38));
+    const rev = Math.min(1, 0.25 + ((kmh % 38) / 38) * 0.75);
+    for (let i = 0; i < 24; i++) {
+      const on = i / 24 < rev;
+      ctx.fillStyle = on ? (i > 19 ? "#ff4b3a" : i > 15 ? "#ffc23a" : "#3ad1ff") : "#18222c";
+      ctx.fillRect(10 + i * 10, 8, 7, 12);
+    }
+    ctx.fillStyle = boost ? "#ffc23a" : "#f2f6fa";
+    ctx.font = "bold 56px ui-monospace, Menlo, monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(String(Math.round(kmh)), 150, 78);
+    ctx.font = "bold 16px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillStyle = "#8fa3b5";
+    ctx.textAlign = "left";
+    ctx.fillText("km/h", 158, 78);
+    ctx.fillStyle = "#3ad1ff";
+    ctx.font = "bold 40px ui-monospace, Menlo, monospace";
+    ctx.fillText(String(gear), 214, 78);
+    texture.needsUpdate = true;
+  };
+  set(0, false);
+  return { mesh, texture, set };
+}
 
 export function buildCockpit(spec: CockpitSpec): Cockpit {
   const group = new THREE.Group();
@@ -92,7 +135,17 @@ export function buildCockpit(spec: CockpitSpec): Cockpit {
   group.add(new THREE.Mesh(merged(trim), cloth));
 
   // Mirrors: the interior one on its stalk, and the door mirror housings in body colour.
-  group.add(new THREE.Mesh(merged([box(0.2, 0.055, 0.012, 0.02, roofY - 0.075, E.z + 0.44, 0.1, 0.12)]), mirrorGlass));
+  // The interior mirror shows a live view behind when the game supplies one; otherwise it reflects the sky.
+  const rearView = new THREE.MeshBasicMaterial({ color: "#c9ccd0", toneMapped: false });
+  const mirror: THREE.Mesh<THREE.PlaneGeometry, THREE.Material> = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.055), mirrorGlass);
+  // Sits just proud of its housing, turned the same way, facing the driver.
+  const mirrorMount = new THREE.Group();
+  mirrorMount.position.set(0.02, roofY - 0.075, E.z + 0.455);
+  mirrorMount.rotation.set(0.1, 0.12, 0);
+  mirror.rotation.y = Math.PI;
+  mirror.position.z = -0.018;
+  mirrorMount.add(mirror);
+  group.add(mirrorMount);
   group.add(new THREE.Mesh(merged([box(0.22, 0.072, 0.03, 0.02, roofY - 0.075, E.z + 0.455, 0.1, 0.12), beam(new THREE.Vector3(0.02, roofY - 0.04, E.z + 0.47), new THREE.Vector3(0.02, roofY + 0.02, E.z + 0.52), 0.022, 0.022)]), plastic));
   const housings = [box(0.17, 0.105, 0.07, half + 0.19, dashY + 0.07, cowlZ - 0.1, 0, -0.25), box(0.17, 0.105, 0.07, -half - 0.19, dashY + 0.07, cowlZ - 0.1, 0, 0.25)];
   group.add(new THREE.Mesh(merged(housings), spec.paint));
@@ -114,45 +167,13 @@ export function buildCockpit(spec: CockpitSpec): Cockpit {
   group.add(bonnet);
 
   // Instruments: a small screen redrawn as the speed changes.
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 96;
-  const ctx = canvas.getContext("2d")!;
-  const screenTex = new THREE.CanvasTexture(canvas);
-  screenTex.colorSpace = THREE.SRGBColorSpace;
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.124), new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false }));
+  const dial = speedScreen(0.33, 0.124);
+  const screen = dial.mesh;
   screen.position.set(E.x, dashY + 0.1, E.z + 0.67);
   screen.rotation.set(0.5, Math.PI, 0);
   group.add(screen);
-  let shown = -1;
-  const setSpeed = (kmh: number, boost: boolean): void => {
-    const key = Math.round(kmh) * 2 + (boost ? 1 : 0);
-    if (key === shown) return;
-    shown = key;
-    ctx.fillStyle = "#05070a";
-    ctx.fillRect(0, 0, 256, 96);
-    // Rev bar: climbs through each gear and drops back on the change.
-    const gear = Math.min(6, 1 + Math.floor(kmh / 38));
-    const rev = Math.min(1, 0.25 + ((kmh % 38) / 38) * 0.75);
-    for (let i = 0; i < 24; i++) {
-      const on = i / 24 < rev;
-      ctx.fillStyle = on ? (i > 19 ? "#ff4b3a" : i > 15 ? "#ffc23a" : "#3ad1ff") : "#18222c";
-      ctx.fillRect(10 + i * 10, 8, 7, 12);
-    }
-    ctx.fillStyle = boost ? "#ffc23a" : "#f2f6fa";
-    ctx.font = "bold 56px ui-monospace, Menlo, monospace";
-    ctx.textAlign = "right";
-    ctx.fillText(String(Math.round(kmh)), 150, 78);
-    ctx.font = "bold 16px ui-sans-serif, system-ui, sans-serif";
-    ctx.fillStyle = "#8fa3b5";
-    ctx.textAlign = "left";
-    ctx.fillText("km/h", 158, 78);
-    ctx.fillStyle = "#3ad1ff";
-    ctx.font = "bold 40px ui-monospace, Menlo, monospace";
-    ctx.fillText(String(gear), 214, 78);
-    screenTex.needsUpdate = true;
-  };
-  setSpeed(0, false);
+  const setSpeed = dial.set;
+  const screenTex = dial.texture;
 
   // Centre screen: a faint glow, like a map left on.
   const centre = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.14), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.016, 0.04, 0.065), toneMapped: false }));
@@ -188,6 +209,13 @@ export function buildCockpit(spec: CockpitSpec): Cockpit {
     eye,
     wheel,
     setSpeed,
+    setRearView(texture) {
+      if (texture && rearView.map !== texture) {
+        rearView.map = texture;
+        rearView.needsUpdate = true;
+      }
+      mirror.material = texture ? rearView : mirrorGlass;
+    },
     dispose() {
       group.traverse((o) => {
         const m = o as THREE.Mesh;

@@ -149,6 +149,11 @@ its own bodywork. The choice is saved with the other settings.
 best-lap line, how far ahead or behind your own best lap you are (green ahead, red behind). Best laps are
 kept per track and speed class in the browser.
 
+**Mirror, motorbike and rain.** In first person the interior mirror shows the road behind: a small
+second view rendered every other frame (off on Low quality). The motorbike has an instrument pod and
+mirrors on stalks for its rider's view. The Slippery Road event is now Rain: drops fall and the tarmac
+goes dark and reflective (`roadWet` in `materials.ts`); the Thunderstorm event uses the same look.
+
 **Venue, lights and sound.** The realistic circuits have debris fencing in alternating stretches,
 grandstands with crowds on the start straight and marshal posts (all in `TrackSurface.tsx`). Tail lamps
 flare under braking. The engine note climbs through six gears and drops on each change, in step with the
