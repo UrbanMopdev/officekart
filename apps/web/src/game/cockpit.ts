@@ -406,8 +406,8 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
           float at = 0.5 - 0.5 * cos(phase);
           float pass = acos(clamp(1.0 - 2.0 * u, -1.0, 1.0));
           float since = min(mod(phase - pass, 6.2832), mod(phase + pass, 6.2832)) / 4.6;
-          float blade = 1.0 - smoothstep(0.006, 0.011, abs(u - at) * (park - top) * r);
-          return vec2(1.0 - smoothstep(0.0, 1.9, since), blade);
+          float blade = 1.0 - smoothstep(0.009, 0.015, abs(u - at) * (park - top) * r);
+          return vec2(1.0 - smoothstep(0.1, 1.2, since), blade);
         }`,
       )
       .replace(
@@ -449,6 +449,10 @@ export function buildCabinCockpit(cabin: Cabin, fit: CabinFit): Cockpit {
   let setSpeed: Cockpit["setSpeed"] = () => {};
   if (cabin.panel && cabin.spec.livePanel) {
     const panel = panelScreen();
+    // The panel is a screen, not a mirror: seen at a shallow angle it must not wash out with reflected sky.
+    cabin.panel.roughness = 0.95;
+    cabin.panel.envMapIntensity = 0.05;
+    cabin.panel.emissiveIntensity = Math.max(cabin.panel.emissiveIntensity, 4);
     cabin.panel.emissiveMap = panel.texture;
     cabin.panel.needsUpdate = true;
     setSpeed = panel.set;

@@ -656,10 +656,11 @@ export function World({ quality }: { quality: Quality }) {
       if (haveFocus) {
         const hx = Math.sin(focus.heading);
         const hz = Math.cos(focus.heading);
-        lamp.position.set(focus.x + hx * 1.7, focus.y + 0.7, focus.z + hz * 1.7);
-        lamp.target.position.set(focus.x + hx * 30, focus.y - 0.6, focus.z + hz * 30);
+        // Set higher than a real lamp so the light meets the road at a useful angle and carries down it.
+        lamp.position.set(focus.x + hx * 1.7, focus.y + 2.2, focus.z + hz * 1.7);
+        lamp.target.position.set(focus.x + hx * 25, focus.y - 0.2, focus.z + hz * 25);
         lamp.target.updateMatrixWorld();
-        lamp.intensity = 430;
+        lamp.intensity = 1400;
       } else lamp.intensity = 0;
     }
     if (Math.abs(camera.fov - fov) > 0.05) {
@@ -801,7 +802,7 @@ export function World({ quality }: { quality: Quality }) {
           changes the number of lights), but dark unless you are in the seat. */}
       <pointLight ref={cabinGlow} color="#c9dcff" intensity={0} distance={2.6} decay={2} />
       {/* Your own headlights on the night circuits: a wide beam thrown down the road ahead. */}
-      {(theme === "night" || theme === "neon") && <spotLight ref={beam} color="#fff1d0" intensity={0} distance={95} angle={0.5} penumbra={0.75} decay={1.6} />}
+      {(theme === "night" || theme === "neon") && <spotLight ref={beam} color="#fff1d0" intensity={0} distance={110} angle={0.5} penumbra={0.75} decay={1.3} />}
       {theme === "neon" && (
         <>
           <pointLight ref={fillA} color="#22d3ee" intensity={1100} distance={90} decay={2} />

@@ -22,7 +22,7 @@ export interface CabinSpec {
 }
 
 export const CABINS: Record<string, CabinSpec> = {
-  concept: { eye: [0, 0.92, 0.3], livePanel: true },
+  concept: { eye: [0, 0.955, 0.3], livePanel: true },
   corolla: {
     eye: [0.34, 1.115, 0.02],
     tones: {
