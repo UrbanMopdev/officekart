@@ -339,6 +339,11 @@ class AudioEngine {
       case "jump":
         this.sweep(300, 760, 0.22, "triangle", 0.16 * volume);
         break;
+      case "bump":
+        // Bodywork meeting bodywork: a dull knock with a short scrape.
+        this.sweep(110, 50, 0.13, "sine", 0.55 * volume);
+        this.burst(0.11, 900, 0.3 * volume, "lowpass");
+        break;
       case "land":
         this.sweep(140, 45, 0.2, "sine", 0.5 * volume);
         this.burst(0.14, 500, 0.2 * volume, "lowpass");

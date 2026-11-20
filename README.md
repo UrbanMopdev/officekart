@@ -28,6 +28,17 @@ multiplayer race with a server-authoritative simulation, on two long circuits. P
 Not built yet: Grand Prix / Team Battle / Time Trial modes, characters and kart classes, gamepad
 support, PostgreSQL-backed profiles and leaderboards.
 
+
+## Car-to-car contact
+
+Cars are solid to each other, and what you see is what you touch.
+
+- **Car-shaped bodies.** Each car is two circles, one over each axle, so it has a length and a width. (A single circle the width of a car lets noses pass through tails.) Motorbikes are narrower. Heavier vehicles give less ground and take less of the bump. The server decides every contact.
+- **Felt at once.** Your own car is predicted on your machine, and that prediction now knows where the other cars are, so a touch stops you on the frame it happens instead of a moment later when the server's correction arrives. A bump has a thud and a nudge of the camera.
+- **One clock on screen.** Your own car is drawn slightly ahead of the server and other cars slightly behind it. At racing speed that used to put other cars about five metres (more than a car length) behind where they were for contact purposes. Other cars are now carried forward along their path to your car's moment (`carryForward` in `packages/shared/src/prediction.ts`); a scripted lap of every circuit puts them within about 10 cm on average.
+
+`npm run test:contact -w @office-kart/game-server` checks both. `?debug` exposes the connection as `window.__net` for inspection.
+
 ## Office Kart 2.0
 
 All seven phases of the 2.0 specification have a working first version. Each was checked with automated

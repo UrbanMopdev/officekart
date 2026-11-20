@@ -25,6 +25,9 @@ import {
   type RoomView,
   type TrialResult,
   VEHICLES,
+  FX,
+  type CarBody,
+  carryForward,
 } from "@office-kart/shared";
 
 /** ?veh=N starts the preview line-up at vehicle N. */
@@ -33,7 +36,9 @@ import { revHeld, sampleInput, setInputEnabled } from "../game/input";
 import { useStore } from "../store";
 
 /** Remote karts are drawn this far in the past so there are always two snapshots to blend. */
-const INTERP_MS = 70;
+const INTERP_MS = 100;
+/** The furthest another car is carried forward to meet our own car's clock. Beyond this a connection is too slow to hide. */
+const MAX_LEAD_S = 0.3;
 const MAX_EXTRAPOLATE_S = 0.15;
 const SESSION_KEY = "office-kart:session";
 const CLOSE_CONSENTED = 4000;
@@ -450,6 +455,7 @@ class Net {
     const dt = Math.min(frameSeconds, 0.1);
     const driving = this.isDriving();
     setInputEnabled(driving);
+    this.seeOthers(driving);
     if (driving && this.room) {
       this.acc += dt;
       let steps = 0;
@@ -472,6 +478,33 @@ class Net {
     this.predictor.decay(dt);
     this.alpha = this.acc / DT;
     return this.alpha;
+  }
+
+  private readonly turns = new Map<number, { rate: number; at: number }>();
+  private bodies: CarBody[] = [];
+  private readonly seen: KartSample = { x: 0, y: 0, z: 0, heading: 0, speed: 0, flags: 0, fx: 0 };
+  /** Tell the prediction where the other cars are right now, so our car can touch them at once. */
+  private seeOthers(driving: boolean): void {
+    const out = this.predictor.others;
+    out.length = 0;
+    const { room, myId } = useStore.getState();
+    if (!driving || !room || this.preview) return;
+    let n = 0;
+    for (const p of room.players) {
+      if (p.id === myId || !p.racing || p.finished || !this.sampleKart(p.slot, this.seen)) continue;
+      const k = this.seen;
+      if (k.fx & FX.PHANTOM) continue;
+      const b = (this.bodies[n++] ??= { x: 0, z: 0, y: 0, heading: 0, vAngle: 0, speed: 0, veh: 0, sizeT: 0, sizeK: 0 });
+      b.x = k.x;
+      b.z = k.z;
+      b.y = k.y;
+      b.heading = b.vAngle = k.heading;
+      b.speed = k.speed;
+      b.veh = p.vehicle;
+      b.sizeT = k.fx & (FX.GIANT | FX.MINI) ? 1 : 0;
+      b.sizeK = k.fx & FX.GIANT ? 1 : -1;
+      out.push(b);
+    }
   }
 
   /** Race tick as the server counts it, estimated from the clock. */
@@ -532,15 +565,38 @@ class Net {
     }
     const span = b.t - a.t;
     const t = span > 0 ? Math.max(0, Math.min(1, (rt - a.t) / span)) : 1;
-    out.x = ax + (b.flat[ib + 1] - ax) * t;
-    out.z = az + (b.flat[ib + 2] - az) * t;
-    out.heading = ah + angleDiff(b.flat[ib + 3], ah) * t;
+    const dx = b.flat[ib + 1] - ax;
+    const dz = b.flat[ib + 2] - az;
+    const dh = angleDiff(b.flat[ib + 3], ah);
+    out.x = ax + dx * t;
+    out.z = az + dz * t;
+    out.heading = ah + dh * t;
     out.speed = as + (b.flat[ib + 4] - as) * t;
     out.flags = b.flat[ib + 5];
     out.fx = b.flat[ib + 7] ?? 0;
     const ay = a.flat[ia + 6] ?? 0;
-    out.y = ay + ((b.flat[ib + 6] ?? 0) - ay) * t;
+    const dy = (b.flat[ib + 6] ?? 0) - ay;
+    out.y = ay + dy * t;
+    // Our own car is drawn ahead of the server's clock and the others behind it. At racing speed that gap is
+    // several metres, enough to show a car we are touching as a car we are inside. So carry the others forward
+    // along their path to the moment our own car is drawn at: what is next to you on screen is next to you.
+    // The turn rate between two snapshots is jumpy; ease it so a carried-forward car does not wobble.
+    let turn = this.turns.get(slot);
+    if (!turn) this.turns.set(slot, (turn = { rate: dh / span, at: b.t }));
+    else if (turn.at !== b.t) {
+      turn.rate += (dh / span - turn.rate) * (b.t - turn.at > 400 ? 1 : 0.5);
+      turn.at = b.t;
+    }
+    carryForward(out, dx, dy, dz, turn.rate * span, span, this.lead(rt));
     return true;
+  }
+
+  /** Seconds between the moment the other cars' snapshots describe and the moment our own car is drawn at. */
+  private lead(rt: number): number {
+    const room = useStore.getState().room;
+    if (!room || !this.isDriving()) return 0;
+    const own = room.raceStartAt + (this.predictor.state.tick - 1 + this.alpha) * TICK_MS;
+    return Math.max(0, Math.min(MAX_LEAD_S, (own - rt) / 1000));
   }
 }
 
@@ -550,3 +606,6 @@ function findSlot(flat: number[], slot: number): number {
 }
 
 export const net = new Net();
+
+// ?debug exposes the connection to the browser console and to the automated contact check.
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("debug")) Object.assign(window, { __net: net, __store: useStore });

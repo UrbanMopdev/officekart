@@ -12,6 +12,7 @@
     "test:speed": "tsx scripts/speed-test.ts",
     "test:fun": "tsx scripts/fun-test.ts",
     "test:cpu": "tsx scripts/cpu-test.ts",
+    "test:contact": "tsx scripts/contact-test.ts && tsx scripts/lead-test.ts",
     "test:trial": "tsx scripts/trial-test.ts",
     "test:race": "tsx scripts/race-test.ts",
     "test:load": "tsx scripts/load-test.ts"

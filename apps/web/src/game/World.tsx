@@ -7,6 +7,7 @@ import { LapDelta } from "./delta";
 import type { Cockpit } from "./cockpit";
 import { cabinFrost, roadWet } from "./materials";
 import { DEFAULT_TRACK_ID, FLAG, FX, KART, angleDiff, driftLevel, getTrack, locate, EVENT } from "@office-kart/shared";
+import { audio } from "../audio";
 import { net, type KartSample } from "../net/connection";
 import { useStore, type Quality } from "../store";
 import { EXHAUST, KartVisual, REAR_LEFT, REAR_RIGHT } from "./kartVisual";
@@ -109,7 +110,7 @@ export function World({ quality }: { quality: Quality }) {
   const beam = useRef<THREE.SpotLight>(null);
   const visuals = useRef(new Map<number, KartVisual>());
   const ghost = useRef<{ race: number; best: Ghost | null; rec: GhostRecorder; visual: KartVisual | null; saved: boolean ; champ: Ghost | null; champVisual: KartVisual | null; champLook: { name: string; color: number; vehicle: number; avatar: number } | null }>({ race: -1, best: null, rec: new GhostRecorder(), visual: null, saved: false, champ: null, champVisual: null, champLook: null });
-  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true, interior: null as Cockpit | null, mirrorTick: 0, delta: null as LapDelta | null, deltaFor: null as unknown, gLong: 0, gLat: 0, lastSpeed: 0, lastHeading: 0 });
+  const cam = useRef({ heading: 0, race: -1, hudAt: 0, shake: 0, y: 0, air: 0, jolt: 0, wasAir: false, wasSpin: false, airFor: 0, eyeNode: null as THREE.Object3D | null, look: 0, steer: 0, fpFresh: true, interior: null as Cockpit | null, mirrorTick: 0, delta: null as LapDelta | null, deltaFor: null as unknown, gLong: 0, gLat: 0, lastSpeed: 0, lastHeading: 0, bumpAt: 0 });
   // Smooths the hand-over when our kart stops being predicted locally (at the
   // finish line) and starts being drawn from server snapshots like everyone else's.
   const fogHome = useRef<{ color: THREE.Color; near: number; far: number } | null>(null);
@@ -561,6 +562,16 @@ export function World({ quality }: { quality: Quality }) {
       c.airFor = inAir ? c.airFor + dt : 0;
       c.wasAir = inAir;
       c.wasSpin = spun;
+      // Contact with another car: a knock you hear and feel, scaled by how hard it was.
+      if (net.predictor.bump > 0) {
+        const hard = Math.min(1, net.predictor.bump / 14);
+        if (net.predictor.bump > 1.2 && time - c.bumpAt > 0.25) {
+          c.bumpAt = time;
+          audio.play("bump", 0.35 + hard * 0.65);
+          c.jolt = Math.max(c.jolt, 0.12 + hard * 0.5);
+        }
+        net.predictor.bump = 0;
+      }
       c.jolt *= Math.exp(-dt * 7);
       // How fast it should feel: share of this speed class's top speed, and more again while boosting.
       const top = KART.maxSpeed * net.predictor.ctx.speed;

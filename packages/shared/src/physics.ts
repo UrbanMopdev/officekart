@@ -523,25 +523,81 @@ export function stepKart(s: KartState, input: KartInput, track: Track, ctx: Race
   if (onBoostPad(track, i, lateral)) s.boost = Math.max(s.boost, KART.boostPadSeconds);
 }
 
+/** What a collision needs to know about a car. A KartState is one; so is a snapshot of someone else's car. */
+export interface CarBody {
+  x: number;
+  z: number;
+  y: number;
+  heading: number;
+  vAngle: number;
+  speed: number;
+  veh: number;
+  sizeT: number;
+  sizeK: number;
+}
+
 /**
- * Kart-to-kart collision between two karts (server-side). Pushes them apart
- * and trades part of their closing velocity. Returns true if they touched.
+ * A car's footprint for contact with other cars: two circles, one over each axle, which together
+ * cover the length and width of the body. (One circle the width of a car lets noses pass through tails.)
+ */
+function footprint(s: CarBody): { r: number; off: number } {
+  const k = s.sizeT > 0 ? (s.sizeK > 0 ? 1.9 : 0.6) : 1;
+  return s.veh === 1 ? { r: 0.62 * k, off: 0.62 * k } : { r: 0.93 * k, off: 1.02 * k };
+}
+
+const contact = { nx: 0, nz: 0, push: 0 };
+/** Deepest overlap between two cars' footprints. False when they are not touching. */
+function touching(a: CarBody, b: CarBody): boolean {
+  if (Math.abs(a.y - b.y) > 1.6) return false;
+  const fa = footprint(a);
+  const fb = footprint(b);
+  const reach = fa.r + fa.off + fb.r + fb.off;
+  if ((b.x - a.x) ** 2 + (b.z - a.z) ** 2 >= reach * reach) return false;
+  const min = fa.r + fb.r;
+  const ahx = Math.sin(a.heading) * fa.off;
+  const ahz = Math.cos(a.heading) * fa.off;
+  const bhx = Math.sin(b.heading) * fb.off;
+  const bhz = Math.cos(b.heading) * fb.off;
+  contact.push = 0;
+  for (let i = -1; i <= 1; i += 2)
+    for (let j = -1; j <= 1; j += 2) {
+      const dx = b.x + bhx * j - (a.x + ahx * i);
+      const dz = b.z + bhz * j - (a.z + ahz * i);
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= min * min) continue;
+      const d = Math.sqrt(d2);
+      if (min - d <= contact.push) continue;
+      contact.push = min - d;
+      contact.nx = d > 1e-4 ? dx / d : 1;
+      contact.nz = d > 1e-4 ? dz / d : 0;
+    }
+  if (contact.push <= 0) return false;
+  // A nose buried past the other car's axle would point the deepest pair backwards; push the cars apart, never through.
+  const cx = b.x - a.x;
+  const cz = b.z - a.z;
+  if (contact.nx * cx + contact.nz * cz < 0) {
+    const c = Math.hypot(cx, cz);
+    contact.nx = c > 1e-4 ? cx / c : 1;
+    contact.nz = c > 1e-4 ? cz / c : 0;
+  }
+  return true;
+}
+
+/** How much of the closing speed a bump hands over: a firm shove, not a pinball bounce. */
+const BUMP = 1.25;
+
+/**
+ * Kart-to-kart collision between two cars. Pushes them apart and trades part of their closing
+ * velocity, shared out by weight. Returns true if they touched.
  */
 export function collideKarts(a: KartState, b: KartState): boolean {
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const min = kartRadius(a) + kartRadius(b);
-  const d2 = dx * dx + dz * dz;
-  if (d2 >= min * min || Math.abs(a.y - b.y) > 1.6) return false;
-  const d = Math.sqrt(d2);
-  const nx = d > 1e-4 ? dx / d : 1;
-  const nz = d > 1e-4 ? dz / d : 0;
+  if (!touching(a, b)) return false;
+  const { nx, nz, push } = contact;
   // Heavier vehicles give less ground and take less of the bump.
   const ma = (VEHICLES[a.veh] ?? VEHICLES[0]).weight;
   const mb = (VEHICLES[b.veh] ?? VEHICLES[0]).weight;
   const sa = mb / (ma + mb);
   const sb = ma / (ma + mb);
-  const push = min - d;
   a.x -= nx * push * sa;
   a.z -= nz * push * sa;
   b.x += nx * push * sb;
@@ -553,11 +609,32 @@ export function collideKarts(a: KartState, b: KartState): boolean {
   const bvz = Math.cos(b.vAngle) * b.speed;
   const closing = (avx - bvx) * nx + (avz - bvz) * nz;
   if (closing > 0) {
-    const j = closing * 1.5; // partly elastic, shared out by weight
+    const j = closing * BUMP;
     applyVelocity(a, avx - nx * j * sa, avz - nz * j * sa);
     applyVelocity(b, bvx + nx * j * sb, bvz + nz * j * sb);
   }
   return true;
+}
+
+/**
+ * The same contact, felt from one side: used by a player's own machine, which knows where the other
+ * cars are but does not move them. Our car is kept wholly out of the other (so the two never overlap
+ * on screen) and takes its share of the bump. Returns the closing speed if they touched, else 0.
+ */
+export function bumpKart(own: KartState, other: CarBody): number {
+  if (!touching(own, other)) return 0;
+  const { nx, nz, push } = contact;
+  const mo = (VEHICLES[own.veh] ?? VEHICLES[0]).weight;
+  const mb = (VEHICLES[other.veh] ?? VEHICLES[0]).weight;
+  own.x -= nx * push;
+  own.z -= nz * push;
+  const avx = Math.sin(own.vAngle) * own.speed;
+  const avz = Math.cos(own.vAngle) * own.speed;
+  const closing = (avx - Math.sin(other.vAngle) * other.speed) * nx + (avz - Math.cos(other.vAngle) * other.speed) * nz;
+  if (closing <= 0) return 0.01;
+  const j = closing * BUMP * (mb / (mo + mb));
+  applyVelocity(own, avx - nx * j, avz - nz * j);
+  return closing;
 }
 
 function applyVelocity(s: KartState, vx: number, vz: number): void {

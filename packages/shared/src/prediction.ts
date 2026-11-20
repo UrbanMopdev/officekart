@@ -9,7 +9,7 @@
  * from what was on screen is folded into a small visual offset that decays over
  * a few frames, so corrections are smooth instead of snapping.
  */
-import { NO_CTX, angleDiff, copyKartState, createKartState, decodeInput, stepKart, unpackKartState, type KartInput, type KartState, type RaceCtx } from "./physics";
+import { NO_CTX, angleDiff, bumpKart, copyKartState, createKartState, decodeInput, stepKart, unpackKartState, type CarBody, type KartInput, type KartState, type RaceCtx } from "./physics";
 import type { Track } from "./track";
 
 interface PendingInput {
@@ -39,6 +39,18 @@ export class Predictor {
   ctx: RaceCtx = { ...NO_CTX };
   private readonly before: KartState = createKartState();
   private hasState = false;
+  /**
+   * The other cars, as last seen. The server decides every collision, but waiting for it would let
+   * our car drive into another before being pushed back out; touching them here makes contact instant.
+   */
+  others: CarBody[] = [];
+  /** Closing speed of the hardest bump this tick (m/s), for the camera and sound. Read and clear. */
+  bump = 0;
+
+  private touch(): void {
+    if (this.state.phantom > 0) return;
+    for (const o of this.others) this.bump = Math.max(this.bump, bumpKart(this.state, o));
+  }
 
   constructor(public track: Track) {}
 
@@ -51,6 +63,8 @@ export class Predictor {
     this.corrections = 0;
     this.hasState = false;
     this.ctx = { ...NO_CTX };
+    this.others = [];
+    this.bump = 0;
   }
 
   get ready(): boolean {
@@ -68,6 +82,7 @@ export class Predictor {
     if (this.pending.length > 120) this.pending.shift();
     copyKartState(this.state, this.prev);
     stepKart(this.state, decodeInput(bits, steer, this.input), this.track, this.ctx);
+    this.touch();
     return [seq, bits, steer];
   }
 
@@ -88,6 +103,9 @@ export class Predictor {
     for (const p of this.pending) {
       copyKartState(this.state, this.prev);
       stepKart(this.state, decodeInput(p.bits, p.steer, this.input), this.track, this.ctx);
+      const felt = this.bump;
+      this.touch();
+      this.bump = felt; // a replayed bump was already felt
     }
     this.hasState = true;
     if (first) return 0;
@@ -117,4 +135,31 @@ export class Predictor {
     this.errH *= f;
     this.errY *= f;
   }
+}
+
+/** Where and which way a car is, as drawn. */
+export interface CarPose {
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  speed: number;
+}
+
+/**
+ * Carry a car forward along its path by `lead` seconds, given how it moved between its two latest snapshots
+ * (`dx`, `dy`, `dz`, `dh` over `spanMs`). Our own car is drawn ahead of the server's clock and the others behind
+ * it; at racing speed that gap is several metres, enough to show a car we are touching as a car we are inside.
+ */
+export function carryForward(out: CarPose, dx: number, dy: number, dz: number, dh: number, spanMs: number, lead: number): void {
+  if (lead <= 0 || spanMs <= 0) return;
+  const moved = Math.hypot(dx, dz);
+  const turn = Math.max(-2.5, Math.min(2.5, (dh / spanMs) * 1000));
+  // Go the way the car is actually travelling (a drifting car does not go where it points), bending with its turn.
+  const dir = (moved > 0.03 ? Math.atan2(dx, dz) : out.heading) + turn * lead * 0.5;
+  const dist = (moved > 0.03 ? Math.abs(out.speed) : out.speed) * lead;
+  out.x += Math.sin(dir) * dist;
+  out.z += Math.cos(dir) * dist;
+  out.heading += turn * lead;
+  out.y += Math.max(-3, Math.min(3, (dy / spanMs) * 1000 * lead));
 }
