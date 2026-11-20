@@ -545,8 +545,8 @@ export function World({ quality }: { quality: Quality }) {
         c.y = focus.y;
       }
       // The camera's height trails the kart's a little, so jumps and drops read as big.
-      c.y += (focus.y - c.y) * (1 - Math.exp(-dt * 7));
-      c.heading += angleDiff(focus.heading, c.heading) * (1 - Math.exp(-dt * 5.5));
+      c.y += (focus.y - c.y) * (1 - Math.exp(-dt * 10));
+      c.heading += angleDiff(focus.heading, c.heading) * (1 - Math.exp(-dt * 8));
       const boost = (focus.flags & FLAG.BOOST) !== 0;
       c.shake += ((boost && settings.shake ? 1 : 0) - c.shake) * (1 - Math.exp(-dt * 6));
       // Pull back and up a little in the air so jumps read as big.
@@ -673,18 +673,18 @@ export function World({ quality }: { quality: Quality }) {
     // --- The shadow-casting light follows the action so its map stays sharp.
     const sun = sunRef.current;
     if (sun) {
-      const range = haveFocus ? 1 : 3.2;
+      const range = haveFocus ? 1 : 4.6;
       const sc = sun.shadow.camera;
-      if (sc.right !== 80 * range) {
-        sc.left = -80 * range;
-        sc.right = 80 * range;
-        sc.top = 80 * range;
-        sc.bottom = -80 * range;
+      if (sc.right !== 55 * range) {
+        sc.left = -55 * range;
+        sc.right = 55 * range;
+        sc.top = 55 * range;
+        sc.bottom = -55 * range;
         sc.updateProjectionMatrix();
       }
       const lookY = haveFocus ? focus.y : track.maxY * 0.4;
       // Move the light in whole shadow-map texels, so shadow edges do not shimmer as it follows the kart.
-      const texel = (160 * range) / (quality === "high" ? 2048 : 1024);
+      const texel = (110 * range) / (quality === "high" ? 2048 : 1024);
       const along = lookX * basis.rx + lookZ * basis.rz;
       const up = lookX * basis.ux + lookY * basis.uy + lookZ * basis.uz;
       const sa = Math.round(along / texel) * texel - along;
@@ -797,9 +797,9 @@ export function World({ quality }: { quality: Quality }) {
         castShadow={shadows}
         shadow-mapSize={quality === "high" ? [2048, 2048] : [1024, 1024]}
         shadow-bias={-0.0006}
-        shadow-normalBias={0.06}
+        shadow-normalBias={0.035}
       >
-        <orthographicCamera attach="shadow-camera" args={[-80, 80, 80, -80, 20, 700]} />
+        <orthographicCamera attach="shadow-camera" args={[-55, 55, 55, -55, 20, 700]} />
       </directionalLight>
       {/* Instrument lighting for the driver's view: always in the scene (so switching views never
           changes the number of lights), but dark unless you are in the seat. */}

@@ -787,7 +787,7 @@ export class RaceRoom extends Room<RaceState> {
           const dz = k.z - box.z;
           if (dx * dx + dz * dz < 6.8 && Math.abs(k.y - box.y) < 3.5) {
             const p = this.state.players.get(r.id);
-            const rolled = rollItem(p ? p.place : 1, live);
+            const rolled = rollItem(p ? p.place : 1, live, this.state.chaos);
             if (r.item === 0) {
               r.item = rolled;
               r.charges = rolled === 7 ? 3 : 1;

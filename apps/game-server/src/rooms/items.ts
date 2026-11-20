@@ -2,7 +2,7 @@
  * Power-ups, things left on the track, and chaos events. All of it is decided
  * here on the server; clients only draw what they are told about.
  */
-import { DT, ENTITY, EVENT, ITEMS, hitKart, kartRadius, respawnKart, wrapDelta, type KartState, type Track } from "@office-kart/shared";
+import { CLEAN_ITEMS, DT, ENTITY, EVENT, ITEMS, hitKart, kartRadius, respawnKart, wrapDelta, type KartState, type Track } from "@office-kart/shared";
 
 export interface Entity {
   id: number;
@@ -38,14 +38,16 @@ export interface ItemRacer {
 /** Power-ups that do something even with nobody else on the track. */
 const SOLO_ITEMS = [1, 1, 7, 7, 10, 5, 8, 12, 12, 14, 15, 16, 19, 19];
 
-export function rollItem(place: number, racers: number): number {
+export function rollItem(place: number, racers: number, chaos = 1): number {
   if (racers <= 1) return SOLO_ITEMS[Math.floor(Math.random() * SOLO_ITEMS.length)];
   const f = racers > 1 ? (place - 1) / (racers - 1) : 0.5;
   const col = f < 0.34 ? 0 : f < 0.67 ? 1 : 2;
+  // A clean race keeps to the straightforward power-ups.
+  const pool = chaos === 0 ? ITEMS.filter((it) => CLEAN_ITEMS.includes(it.id)) : ITEMS;
   let total = 0;
-  for (const it of ITEMS) total += it.w[col];
+  for (const it of pool) total += it.w[col];
   let t = Math.random() * total;
-  for (const it of ITEMS) {
+  for (const it of pool) {
     t -= it.w[col];
     if (t < 0) return it.id;
   }
@@ -342,7 +344,8 @@ export class ItemWorld {
 
 /** Seconds between chaos events for each intensity level, and the chance one actually fires. */
 export const CHAOS_PACE = [
-  { min: 50, max: 80, chance: 0.6, seconds: 11 },
+  // A clean race has no weather or other race-wide events.
+  { min: 50, max: 80, chance: 0, seconds: 11 },
   { min: 26, max: 38, chance: 1, seconds: 12 },
   { min: 14, max: 21, chance: 1, seconds: 14 },
 ];

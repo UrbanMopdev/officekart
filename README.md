@@ -36,10 +36,13 @@ tests before the next was started; none of it has been tuned by people playing y
 **Tracks.** Four circuits, each drawn corner by corner (`packages/shared/src/tracks/layout.ts`: a layout
 is a polygon whose vertices are corners with a chosen radius), so there are real hairpins (about 17 m),
 chicanes, esses and sweepers instead of smooth loops:
-- *Office Grand Prix*: the home circuit, set in pine forest: bus-stop chicane, double hairpin, table-top jump, slalom on conveyor belts.
+The four circuits have a 21 m road (wide enough for four cars abreast) and at most two moving hazards each,
+so a pack can race side by side. The simulation still supports every surface and hazard listed below.
+
+- *Office Grand Prix*: the home circuit, set in pine forest: bus-stop chicane, double hairpin, table-top jump, forest slalom.
 - *Volcano Pass*: three stacked hairpins up a 58 m climb, a lava jump on the open crater rim, esses down.
-- *Midnight Circuit* (id `neon-circuit`): a floodlit night race with a ramp jump into a braking hairpin, flyovers, two chicanes, laser gates.
-- *Frozen Lake*: an icy S, a snowed-in hairpin, and esses over ice that cracks.
+- *Midnight Circuit* (id `neon-circuit`): a floodlit night race with a ramp jump into a braking hairpin, flyovers and two chicanes.
+- *Frozen Lake*: an icy S, a snowed-in hairpin, and esses across the frozen lake.
 The earlier eight looped tracks were removed. Proving Grounds remains as a test-only track.
 
 Corners bank gently about their inside edge. Driving into a wall now costs speed in proportion to the
@@ -63,7 +66,7 @@ muffled.
 is resolved on the server.
 
 **Chaos events.** Low Gravity, Slippery Road, Mega Windstorm, Obstacle Frenzy, Double Power-Ups, Meteor
-Shower and Thunderstorm, announced four seconds ahead. The host picks Normal, Chaotic or Absolute Mayhem.
+Shower and Thunderstorm, announced four seconds ahead. The host picks Clean race, Chaotic or Absolute Mayhem. A clean race (the default) has no race-wide events and only the straightforward power-ups: boosts, the bubble, slime, banana peels and the homing orb.
 
 **Sound.** Music and effects are synthesised in the browser, so all of it is original. Each track has its
 own style, and the music changes for the lobby, countdown, race, final lap and results. Volume sliders
@@ -74,7 +77,7 @@ personal bests (per browser), a vote for the next race, and a spectator camera w
 
 **Speed classes.** The host picks Cruise, Fast, Turbo or Ludicrous in the lobby (1x, 1.2x, 1.4x and
 1.65x top speed, acceleration and boosts). Steering does not scale, so each step up makes corners
-tighter. New lobbies start on Fast with chaos set to Chaotic. The class is part of the shared
+tighter. New lobbies start on Fast as a clean race. The class is part of the shared
 simulation, so the server stays authoritative and prediction matches.
 
 **Skill moves.** All three are decided by the server.

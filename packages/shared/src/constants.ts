@@ -60,7 +60,8 @@ export const KART = {
   turnRate: 2.35,
   /** Fraction of turn rate lost at top speed (speed-sensitive steering). */
   turnSpeedDamp: 0.38,
-  grip: 9,
+  /** How quickly the car's travel lines up with where it points. Higher is more planted, lower slides. */
+  grip: 15,
   driftGrip: 3.1,
   /**
    * A drift follows an arc of a set radius whatever the speed, so it corners the same in every
@@ -182,7 +183,10 @@ export const EVENT_INFO: { name: string; text: string }[] = [
   { name: "Meteor Shower", text: "Get out of the red circles." },
   { name: "Thunderstorm", text: "Less grip, and lightning strikes." },
 ];
-export const CHAOS_LEVELS = ["Normal", "Chaotic", "Absolute Mayhem"] as const;
+/** 0 is a clean race: no weather events and only the straightforward power-ups. */
+export const CHAOS_LEVELS = ["Clean race", "Chaotic", "Absolute Mayhem"] as const;
+/** Power-ups handed out in a clean race: boosts, a shield, and things you can see coming. */
+export const CLEAN_ITEMS = [1, 2, 3, 5, 7, 10, 17];
 
 /** Power-ups. `w` is the pick weight for a kart in the front, middle and back third of the field. */
 export const ITEMS: { id: number; name: string; icon: string; text: string; w: [number, number, number] }[] = [

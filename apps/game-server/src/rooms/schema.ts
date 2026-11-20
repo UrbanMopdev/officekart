@@ -55,7 +55,7 @@ export class RaceState extends Schema {
   @type("float64") raceStartAt = 0;
   @type("uint16") raceNumber = 0;
   /** 0 Normal, 1 Chaotic, 2 Absolute Mayhem. */
-  @type("uint8") chaos = 1;
+  @type("uint8") chaos = 0;
   /** Index into SPEED_CLASSES. */
   @type("uint8") speed = DEFAULT_SPEED_CLASS;
   /** Solo time trial: no power-ups or chaos events; the run goes on the leaderboard. */

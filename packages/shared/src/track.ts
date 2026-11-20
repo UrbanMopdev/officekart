@@ -380,7 +380,7 @@ export function buildTrack(def: TrackDef, targetSpacing = 2): Track {
   for (const at of def.itemRows ?? [0.09, 0.26, 0.42, 0.58, 0.74, 0.91]) {
     const i = idxOf(at);
     if (gap[i] || dyn[i]) continue;
-    for (const lat of [-4.8, -1.6, 1.6, 4.8]) boxes.push({ x: px[i] + nx[i] * lat, y: hy[i] + lat * bankT[i] + 1.3, z: pz[i] + nz[i] * lat, idx: i });
+    for (const lat of [-0.63, -0.21, 0.21, 0.63].map((k) => k * def.roadHalfWidth)) boxes.push({ x: px[i] + nx[i] * lat, y: hy[i] + lat * bankT[i] + 1.3, z: pz[i] + nz[i] * lat, idx: i });
   }
 
   const track: Track = { def, n, spacing, length, px, pz, tx, tz, nx, nz, checkpoints, grid: [], pads: [], hy, slope, bankT, gap, unsafe, respawnAt, open, zones, minY, maxY, hazards, dyn, winds, boxes, waterLevel: def.waterLevel ?? -Infinity };
@@ -390,7 +390,7 @@ export function buildTrack(def: TrackDef, targetSpacing = 2): Track {
     const row = Math.floor(slot / 2);
     const right = slot % 2 === 1;
     const back = 6 + row * 5 + (right ? 2.5 : 0);
-    const lateral = right ? 3.2 : -3.2;
+    const lateral = (right ? 0.4 : -0.4) * def.roadHalfWidth;
     const fi = (((-back / spacing) % n) + n) % n;
     const idx = Math.floor(fi) % n;
     const along = (fi - Math.floor(fi)) * spacing;

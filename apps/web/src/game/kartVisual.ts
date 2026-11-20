@@ -162,7 +162,7 @@ function buildShared(): Shared {
     lights,
     wheel,
     flame: new THREE.ConeGeometry(0.2, 1.5, 12, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -0.75),
-    blob: new THREE.CircleGeometry(1.9, 24).rotateX(-Math.PI / 2),
+    blob: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
     glowPlane: new THREE.PlaneGeometry(6, 8.5).rotateX(-Math.PI / 2),
     darkMat: new THREE.MeshStandardMaterial({ color: "#14171d", roughness: 0.55, metalness: 0.2 }),
     metalMat: new THREE.MeshStandardMaterial({ color: "#cfd4dc", roughness: 0.22, metalness: 1 }),
@@ -170,7 +170,7 @@ function buildShared(): Shared {
     visorMat: new THREE.MeshStandardMaterial({ color: "#0b1020", roughness: 0.06, metalness: 0.9 }),
     lightsMat: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
     wheelMat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.15 }),
-    blobMat: new THREE.MeshBasicMaterial({ color: "#000000", transparent: true, opacity: 0.28, depthWrite: false }),
+    blobMat: new THREE.MeshBasicMaterial({ map: contactTexture(), color: "#000000", transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
     glowTex: glowTexture(),
   };
 }
@@ -367,6 +367,30 @@ const WHEELS: WheelSpec[] = [
   [-0.88, 0.46, -0.95, 1.1],
   [0.88, 0.46, -0.95, 1.1],
 ];
+
+/** A soft, car-shaped patch of shade: darkest under the middle of the car, fading out past its edges. */
+function contactTexture(): THREE.DataTexture {
+  // Worked out point by point (distance outside a rounded box), so it does not depend on canvas filters:
+  // a dark core under the floor inside a wider, fainter pool that spills out past the sills.
+  const w = 64;
+  const h = 128;
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const dx = Math.max(0, Math.abs(x - 31.5) - 9);
+      const dy = Math.max(0, Math.abs(y - 63.5) - 30);
+      const d = Math.hypot(dx, dy);
+      const core = Math.max(0, 1 - d / 9);
+      const pool = Math.max(0, 1 - d / 22);
+      const a = Math.min(1, core * core * 0.6 + pool * pool * 0.5);
+      data.set([255, 255, 255, Math.round(a * 255)], (y * w + x) * 4);
+    }
+  const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
 
 /** Local positions of the rear wheels' contact patches and the two exhaust tips. */
 export const REAR_LEFT = new THREE.Vector3(-0.88, 0.15, -1.05);
@@ -598,8 +622,9 @@ export class KartVisual {
     this.group.add(this.bubble);
 
     this.blob = new THREE.Mesh(s.blob, s.blobMat);
-    this.blob.position.y = 0.09;
-    this.blob.scale.set(0.8, 1, 1.25);
+    this.blob.position.y = 0.12;
+    this.blob.scale.set(2.5, 1, 5);
+    this.blob.renderOrder = 1;
     this.group.add(this.blob);
 
     // Neon underglow: a soft pool of the kart's colour on the road beneath it.
@@ -621,7 +646,9 @@ export class KartVisual {
       if ((o as THREE.Mesh).isMesh) o.castShadow = look.shadows;
     });
     for (const m of this.meshes) m.castShadow = look.shadows && m.material !== shared!.visorMat && m.material !== shared!.lightsMat;
-    this.blob.visible = !look.shadows;
+    // The dark patch under the car is always drawn: it is what plants the car on the road, with or
+    // without the sun's shadow on top.
+    this.blob.visible = true;
     this.glow.visible = look.underglow;
   }
 
@@ -1017,7 +1044,12 @@ export class KartVisual {
     }
     const moving = Math.abs(speed) > 1;
     const rumble = moving ? Math.sin(time * 47 + x) * 0.006 * Math.min(1, Math.abs(speed) / 20) : Math.sin(time * 31 + x) * 0.004;
-    this.body.position.y = Math.sin(this.hop * Math.PI) * 0.6 + rumble + (boosting ? Math.sin(time * 70) * 0.012 : 0);
+    // The contact shadow sizes itself to the car and lets go of it in the air.
+    const foot = this.cockpitSpec ? this.cockpitSpec.halfWidth * this.cockpitSpec.scale : 0.85;
+    this.blob.scale.set(this.vehicle === 1 ? 1.7 : foot * 4.1, 1, this.vehicle === 1 ? 4.4 : 7.6);
+    this.blob.visible = !airborne;
+    // Starting a slide is a small weight shift, not a jump.
+    this.body.position.y = Math.sin(this.hop * Math.PI) * 0.07 + rumble + (boosting ? Math.sin(time * 70) * 0.012 : 0);
 
     // --- The driver: turns the wheel, looks and leans into corners, throws both arms up for a trick, flails when hit.
     const spun = (fx & FX.SPIN) !== 0;
